@@ -424,7 +424,9 @@ tbody tr.clickable:hover { background: var(--brand-faint); }
   .page-header p { margin-top: -10px; }
   .stats { grid-template-columns: 1fr 1fr; }
   .card { border-radius: var(--radius-md); }
-  .sidebar nav .nav:nth-of-type(n+6) { display: none; }
+  .staff-row { flex-direction: column; }
+  .staff-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .staff-actions .tag { margin-right: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

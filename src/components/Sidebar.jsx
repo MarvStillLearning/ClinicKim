@@ -59,7 +59,8 @@ export default function Sidebar({ page, setPage, role, email }) {
           <motion.button
             key={item.id}
             type="button"
-            title={collapsed ? item.label : undefined}
+            title={item.label}
+            aria-label={item.label}
             className={page === item.id ? "nav active" : "nav"}
             onClick={() => setPage(item.id)}
             whileHover={{ x: collapsed ? 0 : 2 }}
