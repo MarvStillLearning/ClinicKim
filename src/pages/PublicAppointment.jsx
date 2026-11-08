@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import { Stethoscope } from "lucide-react";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function PublicAppointment({ onBack }) {
   const [form, setForm] = useState({
@@ -50,6 +51,7 @@ export default function PublicAppointment({ onBack }) {
 
   return (
     <div className="public-booking">
+      <ThemeToggle className="public-theme-toggle" />
       <form className="card public-booking-card" onSubmit={submit}>
         <div className="public-booking-header">
           <Stethoscope size={36} color="#0d9488" />

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import { Stethoscope } from "lucide-react";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function Login({ onBookAppointment, onViewPrices }) {
   const [email, setEmail] = useState("");
@@ -17,6 +18,7 @@ export default function Login({ onBookAppointment, onViewPrices }) {
 
   return (
     <div className="login-bg">
+      <ThemeToggle className="login-theme-toggle" />
       <form className="card login" onSubmit={handleLogin}>
         <div className="login-brand"><span className="brand-mark"><Stethoscope size={21} /></span></div>
         <h2>{CLINIC_NAME}</h2>

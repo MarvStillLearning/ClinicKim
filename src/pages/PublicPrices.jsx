@@ -2,6 +2,7 @@
 import { supabase } from "../supabaseClient";
 import { peso, CLINIC_NAME } from "../lib/format";
 import { ArrowLeft, Search, Stethoscope } from "lucide-react";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function PublicPrices({ onBack }) {
   const [products, setProducts] = useState([]);
@@ -47,7 +48,10 @@ export default function PublicPrices({ onBack }) {
             <span className="brand-mark"><Stethoscope size={22} /></span>
             <div><h1>{CLINIC_NAME}</h1><p className="muted">Medicine & Service Prices</p></div>
           </div>
-          <button className="btn" type="button" onClick={onBack}><ArrowLeft size={16} /> Back to Login</button>
+          <div className="public-header-actions">
+            <ThemeToggle />
+            <button className="btn" type="button" onClick={onBack}><ArrowLeft size={16} /> Back to Login</button>
+          </div>
         </header>
 
         <div className="card public-prices-toolbar">
