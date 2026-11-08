@@ -4,29 +4,33 @@ import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import {
   LayoutDashboard, ShoppingCart, Users, CalendarDays, Package, Receipt,
-  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen
+  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen, ShieldCheck
 } from "lucide-react";
+import ActionLoadingDialog from "./ActionLoadingDialog";
 
 const ALL_PAGES = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "pos", label: "POS / Cashier", icon: ShoppingCart },
-  { id: "patients", label: "Patients", icon: Users },
-  { id: "appointments", label: "Appointments", icon: CalendarDays },
-  { id: "inventory", label: "Inventory", icon: Package },
-  { id: "sales", label: "Sales History", icon: Receipt },
-  { id: "staff", label: "Staff & Roles", icon: UserCog },
+  { id: "dashboard", label: "Dashboard", group: "OVERVIEW", icon: LayoutDashboard },
+  { id: "patients", label: "Patients", group: "CLINICAL", icon: Users },
+  { id: "consultations", label: "Consultations", group: "CLINICAL", icon: Stethoscope },
+  { id: "appointments", label: "Appointments", group: "CLINICAL", icon: CalendarDays },
+  { id: "pos", label: "Medical POS", group: "PHARMACY & POS", icon: ShoppingCart },
+  { id: "inventory", label: "Inventory", group: "PHARMACY & POS", icon: Package },
+  { id: "sales", label: "Sales Transactions", group: "PHARMACY & POS", icon: Receipt },
+  { id: "staff", label: "Doctors & Staff", group: "ADMINISTRATION", icon: UserCog },
+  { id: "audit", label: "Audit Log", group: "ADMINISTRATION", icon: ShieldCheck },
 ];
 
 // Which pages each role can open
 const ACCESS = {
-  admin: ["dashboard", "pos", "patients", "appointments", "inventory", "sales", "staff"],
-  doctor: ["dashboard", "patients", "appointments", "inventory"],
+  admin: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit"],
+  doctor: ["dashboard", "patients", "consultations", "appointments", "inventory"],
   cashier: ["dashboard", "pos", "sales"],
 };
 
 export default function Sidebar({ page, setPage, role, email }) {
   const [collapsed, setCollapsed] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem("clinic-theme") === "dark");
+  const [loggingOut, setLoggingOut] = useState(false);
   const visiblePages = ALL_PAGES.filter((item) => ACCESS[role].includes(item.id));
 
   useEffect(() => {
@@ -35,6 +39,7 @@ export default function Sidebar({ page, setPage, role, email }) {
   }, [dark]);
 
   return (
+    <>
     <motion.aside
       className={`sidebar${collapsed ? " collapsed" : ""}`}
       animate={{ width: collapsed ? 84 : 248 }}
@@ -54,29 +59,37 @@ export default function Sidebar({ page, setPage, role, email }) {
         </button>
       </div>
       <nav>
-        <div className="nav-section-label">Workspace</div>
-        {visiblePages.map((item) => (
-          <motion.button
-            key={item.id}
-            type="button"
-            title={item.label}
-            aria-label={item.label}
-            className={page === item.id ? "nav active" : "nav"}
-            onClick={() => setPage(item.id)}
-            whileHover={{ x: collapsed ? 0 : 2 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {page === item.id && (
-              <motion.span
-                className="nav-active-indicator"
-                layoutId="sidebar-active-item"
-                transition={{ type: "spring", stiffness: 420, damping: 34 }}
-              />
-            )}
-            <item.icon size={18} />
-            {!collapsed && <span>{item.label}</span>}
-          </motion.button>
-        ))}
+        {["OVERVIEW", "CLINICAL", "PHARMACY & POS", "ADMINISTRATION"].map((group) => {
+          const items = visiblePages.filter((item) => item.group === group);
+          if (!items.length) return null;
+          return (
+            <div className="nav-group" key={group}>
+              {!collapsed && <div className="nav-section-label">{group}</div>}
+              {items.map((item) => (
+                <motion.button
+                  key={item.id}
+                  type="button"
+                  title={item.label}
+                  aria-label={item.label}
+                  className={page === item.id ? "nav active" : "nav"}
+                  onClick={() => setPage(item.id)}
+                  whileHover={{ x: collapsed ? 0 : 2 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {page === item.id && (
+                    <motion.span
+                      className="nav-active-indicator"
+                      layoutId="sidebar-active-item"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <item.icon size={18} />
+                  {!collapsed && <span>{item.label}</span>}
+                </motion.button>
+              ))}
+            </div>
+          );
+        })}
       </nav>
       <div className="user-box">
         {!collapsed && (
@@ -101,7 +114,10 @@ export default function Sidebar({ page, setPage, role, email }) {
             className="nav logout"
             type="button"
             title="Log out"
-            onClick={() => supabase.auth.signOut()}
+            onClick={async () => {
+              setLoggingOut(true);
+              await supabase.auth.signOut();
+            }}
             whileTap={{ scale: 0.96 }}
           >
             <LogOut size={18} />
@@ -110,5 +126,7 @@ export default function Sidebar({ page, setPage, role, email }) {
         </div>
       </div>
     </motion.aside>
+    <ActionLoadingDialog open={loggingOut} title="Signing out" description="Closing your secure session..." />
+    </>
   );
 }

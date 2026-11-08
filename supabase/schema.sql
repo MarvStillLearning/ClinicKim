@@ -43,6 +43,8 @@ create table if not exists appointments (
   status text not null default 'Scheduled',
   created_at timestamptz default now()
 );
+alter table appointments add column if not exists duration_minutes integer not null default 30;
+alter table appointments add column if not exists location text;
 
 create table if not exists products (
   id bigint generated always as identity primary key,
@@ -51,6 +53,7 @@ create table if not exists products (
   stock int not null default 0
 );
 alter table products add column if not exists category text default 'Medicine';
+alter table products add column if not exists expiry_date date;
 
 create table if not exists sales (
   id bigint generated always as identity primary key,
@@ -72,6 +75,15 @@ create table if not exists sale_items (
   name text,
   price numeric,
   qty int
+);
+
+create table if not exists audit_logs (
+  id bigint generated always as identity primary key,
+  actor_id uuid references auth.users,
+  action text not null,
+  table_name text not null,
+  record_id text,
+  created_at timestamptz not null default now()
 );
 
 -- Patient deletion rules: remove records and appointments, preserve walk-in sales history.
@@ -249,6 +261,62 @@ create policy "sale items staff read" on public.sale_items for select to authent
 create policy "sale items no direct write" on public.sale_items for all to authenticated
   using (false) with check (false);
 
+-- Audit trail: admin can review, application users cannot read or modify audit entries.
+alter table public.audit_logs enable row level security;
+grant select on public.audit_logs to authenticated;
+drop policy if exists "audit admin read" on public.audit_logs;
+create policy "audit admin read" on public.audit_logs for select to authenticated
+  using (public.current_user_role() = 'admin');
+drop policy if exists "audit no client write" on public.audit_logs;
+create policy "audit no client write" on public.audit_logs for all to authenticated
+  using (false) with check (false);
+
+create or replace function public.log_sensitive_action()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_record_id text;
+begin
+  if tg_op = 'DELETE' then
+    v_record_id := coalesce(to_jsonb(old)->>'id', '');
+  else
+    v_record_id := coalesce(to_jsonb(new)->>'id', '');
+  end if;
+
+  insert into public.audit_logs (actor_id, action, table_name, record_id)
+  values (auth.uid(), tg_op, tg_table_name, v_record_id);
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists patients_audit_trigger on public.patients;
+create trigger patients_audit_trigger
+  after insert or update or delete on public.patients
+  for each row execute function public.log_sensitive_action();
+
+drop trigger if exists records_audit_trigger on public.records;
+create trigger records_audit_trigger
+  after insert or update or delete on public.records
+  for each row execute function public.log_sensitive_action();
+
+drop trigger if exists appointments_audit_trigger on public.appointments;
+create trigger appointments_audit_trigger
+  after insert or update or delete on public.appointments
+  for each row execute function public.log_sensitive_action();
+
+drop trigger if exists profiles_audit_trigger on public.profiles;
+create trigger profiles_audit_trigger
+  after insert or update or delete on public.profiles
+  for each row execute function public.log_sensitive_action();
+
+drop trigger if exists sales_audit_trigger on public.sales;
+create trigger sales_audit_trigger
+  after insert or update or delete on public.sales
+  for each row execute function public.log_sensitive_action();
+
 -- Public visitors may only read Medicine and Service prices.
 drop policy if exists "public medicine and service prices" on public.products;
 create policy "public medicine and service prices"
@@ -389,6 +457,7 @@ alter table public.profiles add constraint profiles_role_check check (role in ('
 
 -- Public patient appointment booking
 alter table public.appointments add column if not exists booking_code text;
+alter table public.appointments add column if not exists location text;
 update public.appointments
 set booking_code = 'APT-' || lpad(id::text, 6, '0')
 where booking_code is null;
@@ -396,6 +465,7 @@ create unique index if not exists appointments_booking_code_unique
   on public.appointments(booking_code)
   where booking_code is not null;
 
+drop function if exists public.book_appointment(text, text, timestamptz, text, text, text);
 drop function if exists public.book_appointment(text, text, timestamptz, text, text);
 
 create function public.book_appointment(
@@ -403,7 +473,8 @@ create function public.book_appointment(
   p_phone text,
   p_appt_at timestamptz,
   p_reason text,
-  p_doctor text default ''
+  p_doctor text default 'Monique Nolasco - Pet',
+  p_location text default ''
 ) returns jsonb
 language plpgsql
 security definer
@@ -425,6 +496,12 @@ begin
   end if;
   if length(trim(coalesce(p_doctor, ''))) > 100 then
     raise exception 'Doctor name is too long';
+  end if;
+  if trim(coalesce(p_doctor, '')) <> 'Monique Nolasco - Pet' then
+    raise exception 'Invalid doctor';
+  end if;
+  if trim(coalesce(p_location, '')) not in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan') then
+    raise exception 'Invalid location';
   end if;
   if length(trim(coalesce(p_full_name, ''))) = 0 then
     raise exception 'Full name is required';
@@ -452,8 +529,8 @@ begin
       and (full_name is null or length(trim(full_name)) = 0);
   end if;
 
-  insert into public.appointments (patient_id, appt_at, reason, doctor, status)
-  values (v_patient_id, p_appt_at, trim(coalesce(p_reason, '')), trim(coalesce(p_doctor, '')), 'Scheduled')
+  insert into public.appointments (patient_id, appt_at, reason, doctor, location, status)
+  values (v_patient_id, p_appt_at, trim(coalesce(p_reason, '')), 'Monique Nolasco - Pet', trim(p_location), 'Scheduled')
   returning id into v_appointment_id;
 
   update public.appointments
@@ -465,7 +542,62 @@ begin
 end;
 $$;
 
-revoke all on function public.book_appointment(text, text, timestamptz, text, text) from public;
-grant execute on function public.book_appointment(text, text, timestamptz, text, text) to anon, authenticated;
+revoke all on function public.book_appointment(text, text, timestamptz, text, text, text) from public;
+grant execute on function public.book_appointment(text, text, timestamptz, text, text, text) to anon, authenticated;
+
+drop function if exists public.get_doctors();
+create function public.get_doctors()
+returns table(id uuid, full_name text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id, p.full_name
+  from public.profiles p
+  where p.role = 'doctor'
+    and coalesce(trim(p.full_name), '') <> ''
+  order by p.full_name;
+$$;
+
+revoke all on function public.get_doctors() from public;
+grant execute on function public.get_doctors() to anon, authenticated;
+
+create or replace function public.prevent_doctor_double_booking()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_duration integer := greatest(coalesce(new.duration_minutes, 30), 15);
+begin
+  if coalesce(new.status, '') = 'Cancelled' then
+    return new;
+  end if;
+  if coalesce(trim(new.doctor), '') = '' then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from public.appointments existing
+    where existing.id is distinct from new.id
+      and existing.status <> 'Cancelled'
+      and coalesce(existing.status, '') <> 'Done'
+      and lower(trim(coalesce(existing.doctor, ''))) = lower(trim(new.doctor))
+      and existing.appt_at < (new.appt_at + make_interval(mins => v_duration))
+      and (existing.appt_at + make_interval(mins => greatest(coalesce(existing.duration_minutes, 30), 15))) > new.appt_at
+  ) then
+    raise exception 'Doctor is already booked for this time slot';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists prevent_doctor_double_booking on public.appointments;
+create trigger prevent_doctor_double_booking
+  before insert or update on public.appointments
+  for each row execute function public.prevent_doctor_double_booking();
 
 notify pgrst, 'reload schema';

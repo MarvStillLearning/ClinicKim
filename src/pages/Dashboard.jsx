@@ -29,7 +29,7 @@ function CountUp({ value, format = (number) => String(number) }) {
   return format(shown);
 }
 
-export default function Dashboard() {
+export default function Dashboard({ onOpenAppointmentsToday }) {
   const [sales, setSales] = useState([]);       // last 7 days
   const [patientCount, setPatientCount] = useState(0);
   const [lowStock, setLowStock] = useState([]);
@@ -48,7 +48,6 @@ export default function Dashboard() {
       const l = await supabase.from("products").select("*").neq("category", "Service").lte("stock", 5).order("stock");
       const a = await supabase.from("appointments").select("*, patients(full_name)")
         .gte("appt_at", today.toISOString()).lt("appt_at", tomorrow.toISOString()).order("appt_at");
-
       setSales(s.data || []);
       setPatientCount(p.count || 0);
       setLowStock(l.data || []);
@@ -68,13 +67,18 @@ export default function Dashboard() {
   }
   const max = Math.max(...days.map((d) => d.total), 1);
   const todayTotal = days[6].total;
+  const todayLabel = new Date().toLocaleDateString("en-PH", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">Overview of today's clinic activity</p>
+          <p className="muted">{todayLabel}</p>
         </div>
       </div>
       {loading ? (
@@ -92,6 +96,12 @@ export default function Dashboard() {
           <motion.div
             className={`stat ${stat.className}`}
             key={stat.label}
+            role={stat.label === "Appointments today" ? "button" : undefined}
+            tabIndex={stat.label === "Appointments today" ? 0 : undefined}
+            onClick={stat.label === "Appointments today" ? onOpenAppointmentsToday : undefined}
+            onKeyDown={stat.label === "Appointments today" ? (event) => {
+              if (event.key === "Enter" || event.key === " ") onOpenAppointmentsToday?.();
+            } : undefined}
             initial={reducedMotion ? false : { opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: reducedMotion ? 0 : 0.28, delay: reducedMotion ? 0 : index * 0.06 }}
@@ -104,8 +114,8 @@ export default function Dashboard() {
       </div>
       )}
 
-      <div className="two-col">
-        <div className="card">
+      <div className="dashboard-grid">
+        <div className="card dashboard-sales">
           <h3>Sales - last 7 days</h3>
           <div className="chart">
             {days.map((d, index) => (
@@ -122,18 +132,27 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-        <div className="card">
+        <div className="card dashboard-appointments">
           <h3>Today's appointments</h3>
           {appts.length === 0 && <p className="muted">No appointments today.</p>}
-          {appts.map((a) => (
-            <div key={a.id} className="list-row">
+          {appts.slice(0, 6).map((a) => (
+            <div
+              key={a.id}
+              className="list-row dashboard-list-link"
+              role="button"
+              tabIndex={0}
+              onClick={onOpenAppointmentsToday}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") onOpenAppointmentsToday?.();
+              }}
+            >
               <span><b>{a.patients?.full_name}</b><br /><small>{a.reason}</small></span>
               <span className="muted">{new Date(a.appt_at).toLocaleTimeString("en-PH", { timeStyle: "short" })}</span>
             </div>
           ))}
           <h3 style={{ marginTop: 20 }}>Low stock</h3>
           {lowStock.length === 0 && <p className="muted">All items have enough stock.</p>}
-          {lowStock.slice(0, 6).map((p) => (
+          {lowStock.slice(0, 5).map((p) => (
             <div key={p.id} className="list-row"><span>{p.name}</span><span className="tag red">{p.stock} left</span></div>
           ))}
         </div>

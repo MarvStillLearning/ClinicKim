@@ -1,30 +1,246 @@
 import { useEffect, useState } from "react";
+import { Search, Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { ageFrom, dateTime, CLINIC_NAME } from "../lib/format";
+import Pagination from "../components/Pagination";
+import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import Modal from "../components/Modal";
 
-export default function Clinical({ user }) {
+const emptyConsultation = {
+  complaint: "",
+  bp: "",
+  temperature: "",
+  weight: "",
+  diagnosis: "",
+  treatment: "",
+  notes: "",
+};
+
+export default function Clinical() {
   const [patients, setPatients] = useState([]);
   const [records, setRecords] = useState([]);
   const [patientId, setPatientId] = useState("");
-  const [form, setForm] = useState({ subject: "", objective: "", assessment: "", plan: "", diagnosis: "", treatment: "", prescription: "", vitals: "" });
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState(emptyConsultation);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [patientPage, setPatientPage] = useState(1);
+  const [recordPage, setRecordPage] = useState(1);
+  const [pendingPatient, setPendingPatient] = useState(null);
+  const pageSize = 10;
 
-  async function loadPatients() { const { data } = await supabase.from("patients").select("*").order("full_name"); setPatients(data || []); }
-  async function loadRecords(id) { const { data } = await supabase.from("records").select("*").eq("patient_id", id).order("created_at", { ascending: false }); setRecords(data || []); }
-  useEffect(() => { loadPatients(); }, []);
-  function selectPatient(id) { setPatientId(id); loadRecords(id); }
-
-  async function save(e) {
-    e.preventEvent?.();
-    e.preventDefault();
-    if (!patientId) return alert("Select a patient");
-    const { error } = await supabase.from("records").insert({ ...form, diagnosis: form.assessment || form.diagnosis, treatment: form.plan || form.treatment, patient_id: Number(patientId), created_by: user.id });
-    if (error) return alert(error.message);
-    setForm({ subject: "", objective: "", assessment: "", plan: "", diagnosis: "", treatment: "", prescription: "", vitals: "" }); loadRecords(patientId);
+  async function loadPatients() {
+    const { data } = await supabase.from("patients").select("*").order("full_name");
+    setPatients(data || []);
   }
 
-  const patient = patients.find((p) => String(p.id) === String(patientId));
-  return <div><div className="page-heading"><div><h2>Clinical consultation</h2><p>SOAP notes, vitals, diagnosis, and prescriptions</p></div></div><div className="layout-grid">
-    <div className="card"><h3>Select patient</h3><select className="full" value={patientId} onChange={(e) => selectPatient(e.target.value)}><option value="">Choose patient</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select>{patient && <div className="patient-summary"><strong>{patient.full_name}</strong><span>{patient.age ? `${patient.age} years` : "Age not recorded"} · {patient.phone || "No phone"}</span></div>}</div>
-    <div className="card wide"><h3>New SOAP consultation</h3><form className="consultation-form" onSubmit={save}><input placeholder="Vital signs (BP, pulse, temperature, SpO₂)" value={form.vitals} onChange={(e) => setForm({ ...form, vitals: e.target.value })}/><textarea placeholder="Subjective — symptoms and patient history" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}/><textarea placeholder="Objective — examination findings" value={form.objective} onChange={(e) => setForm({ ...form, objective: e.target.value })}/><textarea placeholder="Assessment / diagnosis" value={form.assessment} onChange={(e) => setForm({ ...form, assessment: e.target.value })} required/><textarea placeholder="Plan / treatment" value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })}/><textarea placeholder="Prescription / medicines and instructions" value={form.prescription} onChange={(e) => setForm({ ...form, prescription: e.target.value })}/><button>Save consultation</button></form></div>
-    <div className="card wide full-span"><h3>Medical history</h3>{records.map((r) => <div className="record" key={r.id}><small>{new Date(r.created_at).toLocaleString()}</small><div><b>Vitals:</b> {r.vitals || "—"}</div><div><b>Subjective:</b> {r.subject || "—"}</div><div><b>Objective:</b> {r.objective || "—"}</div><div><b>Assessment:</b> {r.diagnosis || "—"}</div><div><b>Plan:</b> {r.treatment || "—"}</div><div><b>Prescription:</b> {r.prescription || "—"}</div></div>)}</div>
-  </div></div>;
+  async function loadRecords(id) {
+    const { data } = await supabase
+      .from("records")
+      .select("*")
+      .eq("patient_id", id)
+      .order("created_at", { ascending: false });
+    setRecords(data || []);
+    setRecordPage(1);
+  }
+
+  useEffect(() => { loadPatients(); }, []);
+
+  function selectPatient(id) {
+    setPatientId(id);
+    setForm(emptyConsultation);
+    setMessage("");
+    if (id) loadRecords(Number(id));
+    else setRecords([]);
+  }
+
+  function confirmPatient() {
+    if (!pendingPatient) return;
+    selectPatient(String(pendingPatient.id));
+    setPendingPatient(null);
+  }
+
+  async function saveConsultation(e) {
+    e.preventDefault();
+    if (!patientId) {
+      setMessage("Select a patient before saving the consultation.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    const { error } = await supabase.from("records").insert({
+      ...form,
+      weight: form.weight ? Number(form.weight) : null,
+      patient_id: Number(patientId),
+    });
+
+    if (error) {
+      setMessage(error.message);
+      setSaving(false);
+      return;
+    }
+
+    setForm(emptyConsultation);
+    await loadRecords(Number(patientId));
+    setSaving(false);
+  }
+
+  function printPrescription(record) {
+    const patient = patients.find((item) => String(item.id) === String(patientId));
+    if (!patient) return;
+    const escape = (value) => String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    const printed = window.open("", "_blank", "width=800,height=600");
+    if (!printed) {
+      setMessage("Allow pop-ups to print the prescription.");
+      return;
+    }
+
+    printed.document.write(`<!doctype html>
+      <html><head><title>Prescription</title><style>
+        body{font-family:Arial,sans-serif;margin:40px;color:#111}
+        .clinic{text-align:center;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:20px}
+        .meta{display:flex;justify-content:space-between;margin-bottom:20px}
+        .rx{font-size:28px;font-weight:bold;margin:20px 0 10px}
+        .prescription{white-space:pre-wrap;border:1px solid #ccc;padding:16px;min-height:180px}
+        @media print{button{display:none}}
+      </style></head><body>
+        <div class="clinic"><h2>${escape(CLINIC_NAME)}</h2><small>Medical Prescription</small></div>
+        <div class="meta"><span><b>Patient:</b> ${escape(patient.full_name)}</span><span><b>Date:</b> ${escape(dateTime(record.created_at))}</span></div>
+        ${patient.birthdate ? `<p><b>Age:</b> ${escape(ageFrom(patient.birthdate))} years</p>` : ""}
+        <p><b>Diagnosis:</b> ${escape(record.diagnosis || "-")}</p>
+        <div class="rx">Rx</div><div class="prescription">${escape(record.treatment || "No prescription recorded.")}</div>
+        <p style="margin-top:50px">__________________________<br><small>Doctor's signature</small></p>
+        <button onclick="window.print()">Print prescription</button>
+      </body></html>`);
+    printed.document.close();
+  }
+
+  const shownPatients = patients.filter((patient) =>
+    patient.full_name.toLowerCase().includes(search.trim().toLowerCase())
+  );
+  const patientTotalPages = Math.max(1, Math.ceil(shownPatients.length / pageSize));
+  const currentPatientPage = Math.min(patientPage, patientTotalPages);
+  const pagedPatients = shownPatients.slice((currentPatientPage - 1) * pageSize, currentPatientPage * pageSize);
+  useEffect(() => { setPatientPage(1); }, [search]);
+
+  const recordTotalPages = Math.max(1, Math.ceil(records.length / pageSize));
+  const currentRecordPage = Math.min(recordPage, recordTotalPages);
+  const pagedRecords = records.slice((currentRecordPage - 1) * pageSize, currentRecordPage * pageSize);
+
+  const patient = patients.find((item) => String(item.id) === String(patientId));
+  const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1>Consultations</h1>
+          <p className="muted">Clinical notes, diagnosis, treatment, and prescriptions</p>
+        </div>
+      </div>
+
+      <div className="consultation-layout">
+        <div className="card consultation-patient-list">
+          <h3>Select patient</h3>
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="Search patient..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <div className="consultation-patient-options">
+            {pagedPatients.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={`consultation-patient-option ${String(item.id) === String(patientId) ? "active" : ""}`}
+                onClick={() => setPendingPatient(item)}
+              >
+                <b>{item.full_name}</b>
+                <small>{item.phone || "No phone"}</small>
+              </button>
+            ))}
+            {pagedPatients.length === 0 && <p className="muted">No patients found.</p>}
+          </div>
+          <Pagination page={patientPage} setPage={setPatientPage} totalItems={shownPatients.length} pageSize={pageSize} />
+        </div>
+
+        <div className="consultation-workspace">
+          {patient && (
+            <div className="card consultation-summary">
+              <div>
+                <small>Selected patient</small>
+                <h3>{patient.full_name}</h3>
+              </div>
+              <span>{patient.sex || "-"} · {patient.birthdate ? `${ageFrom(patient.birthdate)} years` : "Age not set"}</span>
+            </div>
+          )}
+
+          <form className="card form-grid consultation-form" onSubmit={saveConsultation}>
+            <h3>New consultation</h3>
+            {message && <p className="error modal-message">{message}</p>}
+            <label>Chief complaint<input value={form.complaint} onChange={set("complaint")} required /></label>
+            <label>Blood pressure<input value={form.bp} onChange={set("bp")} placeholder="120/80" /></label>
+            <label>Temperature (°C)<input value={form.temperature} onChange={set("temperature")} /></label>
+            <label>Weight (kg)<input type="number" step="0.1" value={form.weight} onChange={set("weight")} /></label>
+            <label>Diagnosis<input value={form.diagnosis} onChange={set("diagnosis")} required /></label>
+            <label>Treatment / prescription<textarea value={form.treatment} onChange={set("treatment")} /></label>
+            <label>Doctor's notes<textarea value={form.notes} onChange={set("notes")} /></label>
+            <div className="modal-actions">
+              <button className="btn primary" type="submit" disabled={saving || !patientId}>
+                {saving ? "Saving..." : "Save consultation"}
+              </button>
+            </div>
+          </form>
+
+          <div className="card consultation-history">
+            <h3>Consultation history</h3>
+            {!patientId && <p className="muted">Select a patient to view consultation history.</p>}
+            {patientId && records.length === 0 && <p className="muted">No consultations yet.</p>}
+            {pagedRecords.map((record) => (
+              <div className="consultation-record" key={record.id}>
+                <div className="consultation-record-header">
+                  <span><b>{dateTime(record.created_at)}</b></span>
+                  <button className="btn small" type="button" onClick={() => printPrescription(record)}>
+                    <Printer size={14} /> Print Rx
+                  </button>
+                </div>
+                <div className="consultation-record-grid">
+                  <div><small>Complaint</small><p>{record.complaint || "-"}</p></div>
+                  <div><small>Vitals</small><p>BP: {record.bp || "-"} · Temp: {record.temperature || "-"} · Weight: {record.weight || "-"} kg</p></div>
+                  <div><small>Diagnosis</small><p>{record.diagnosis || "-"}</p></div>
+                  <div><small>Prescription</small><p>{record.treatment || "-"}</p></div>
+                </div>
+              </div>
+            ))}
+            {patientId && <Pagination page={recordPage} setPage={setRecordPage} totalItems={records.length} pageSize={pageSize} />}
+          </div>
+        </div>
+      </div>
+
+      <ActionLoadingDialog
+        open={saving}
+        title="Saving consultation"
+        description="Recording diagnosis, treatment, and prescription..."
+      />
+      <Modal title="Confirm patient before consultation" open={Boolean(pendingPatient)} onClose={() => setPendingPatient(null)} className="staff-modal">
+        {pendingPatient && (
+          <div className="patient-confirmation">
+            <h3>{pendingPatient.full_name}</h3>
+            <p><b>Phone:</b> {pendingPatient.phone || "Not recorded"}</p>
+            <p><b>Sex / Age:</b> {pendingPatient.sex || "-"}{pendingPatient.birthdate ? ` · ${ageFrom(pendingPatient.birthdate)} years` : ""}</p>
+            <p><b>Address:</b> {pendingPatient.address || "Not recorded"}</p>
+            {pendingPatient.allergies && <p className="alert"><b>Allergies:</b> {pendingPatient.allergies}</p>}
+            {pendingPatient.emergency_contact && <p><b>Emergency contact:</b> {pendingPatient.emergency_contact}</p>}
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setPendingPatient(null)}>Cancel</button>
+              <button type="button" className="btn primary" onClick={confirmPatient}>Confirm and consult</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
 }

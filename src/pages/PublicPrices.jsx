@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 import { peso, CLINIC_NAME } from "../lib/format";
 import { ArrowLeft, Search, Stethoscope } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
+import Pagination from "../components/Pagination";
 
 export default function PublicPrices({ onBack }) {
   const [products, setProducts] = useState([]);
@@ -10,6 +11,8 @@ export default function PublicPrices({ onBack }) {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   useEffect(() => {
     let active = true;
@@ -36,8 +39,12 @@ export default function PublicPrices({ onBack }) {
     (category === "All" || p.category === category) &&
     p.name?.toLowerCase().includes(query)
   );
+  const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedShown = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  useEffect(() => { setPage(1); }, [search, category]);
   const groups = ["Medicine", "Service"]
-    .map((name) => ({ name, items: shown.filter((p) => p.category === name) }))
+    .map((name) => ({ name, items: pagedShown.filter((p) => p.category === name) }))
     .filter((group) => category === "All" || group.name === category);
 
   return (
@@ -84,6 +91,7 @@ export default function PublicPrices({ onBack }) {
             </section>
           ))
         )}
+        <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />
       </main>
     </div>
   );

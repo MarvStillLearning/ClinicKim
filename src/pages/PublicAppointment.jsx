@@ -3,6 +3,8 @@ import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import { Stethoscope } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
+import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import Modal from "../components/Modal";
 
 export default function PublicAppointment({ onBack }) {
   const [form, setForm] = useState({
@@ -10,12 +12,14 @@ export default function PublicAppointment({ onBack }) {
     phone: "",
     appt_at: "",
     reason: "",
-    doctor: "",
+    doctor: "Monique Nolasco - Pet",
+    location: "",
   });
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bookingCode, setBookingCode] = useState("");
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
@@ -29,12 +33,21 @@ export default function PublicAppointment({ onBack }) {
       return;
     }
 
+    setShowConfirmation(true);
+    setSaving(false);
+  }
+
+  async function confirmBooking() {
+    setSaving(true);
+    setMessage("");
+    const selectedTime = new Date(form.appt_at);
     const { data, error } = await supabase.rpc("book_appointment", {
       p_full_name: form.full_name.trim(),
       p_phone: form.phone.trim(),
       p_appt_at: selectedTime.toISOString(),
       p_reason: form.reason.trim(),
       p_doctor: form.doctor.trim(),
+      p_location: form.location,
     });
 
     if (error?.message?.includes("Could not find the function")) {
@@ -46,6 +59,7 @@ export default function PublicAppointment({ onBack }) {
       setBookingCode(data?.booking_code || "");
       setSuccess(true);
     }
+    setShowConfirmation(false);
     setSaving(false);
   }
 
@@ -87,8 +101,17 @@ export default function PublicAppointment({ onBack }) {
             <label>Reason for Visit
               <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
             </label>
-            <label>Preferred Doctor (optional)
-              <input value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} />
+            <label>Location
+              <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required>
+                <option value="">Select location...</option>
+                <option value="Sta. Ana, Cagayan">Sta. Ana, Cagayan</option>
+                <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
+              </select>
+            </label>
+            <label>Doctor
+              <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
+                <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
+              </select>
             </label>
             {message && <p className="error">{message}</p>}
             <button className="btn primary" type="submit" disabled={saving}>{saving ? "Submitting..." : "Submit Appointment"}</button>
@@ -96,6 +119,22 @@ export default function PublicAppointment({ onBack }) {
           </>
         )}
       </form>
+      <Modal title="Confirm appointment details" open={showConfirmation} onClose={() => setShowConfirmation(false)} className="staff-modal">
+        <div className="patient-confirmation">
+          <p>Please check that the patient and clinic details are correct before booking.</p>
+          <h3>{form.full_name}</h3>
+          <p><b>Phone:</b> {form.phone}</p>
+          <p><b>Date & Time:</b> {new Date(form.appt_at).toLocaleString()}</p>
+          <p><b>Location:</b> {form.location}</p>
+          <p><b>Doctor:</b> {form.doctor}</p>
+          <p><b>Reason:</b> {form.reason}</p>
+          <div className="modal-actions">
+            <button type="button" className="btn" onClick={() => setShowConfirmation(false)}>Cancel</button>
+            <button type="button" className="btn primary" onClick={confirmBooking}>Confirm & Book</button>
+          </div>
+        </div>
+      </Modal>
+      <ActionLoadingDialog open={saving} title="Submitting appointment" description="Creating your clinic booking..." />
     </div>
   );
 }

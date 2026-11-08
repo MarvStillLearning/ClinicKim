@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { peso, dateTime, CLINIC_NAME } from "../lib/format";
 import { Search, Plus, Minus, Trash2 } from "lucide-react";
+import Pagination from "../components/Pagination";
+import ActionLoadingDialog from "../components/ActionLoadingDialog";
 
 export default function POS({ user }) {
   const [products, setProducts] = useState([]);
@@ -16,6 +18,9 @@ export default function POS({ user }) {
   const [paid, setPaid] = useState("");
   const [receipt, setReceipt] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [productPage, setProductPage] = useState(1);
+  const [cartPage, setCartPage] = useState(1);
+  const pageSize = 10;
 
   async function loadData() {
     const p = await supabase.from("products").select("*").in("category", ["Medicine", "Service"]).order("name");
@@ -84,6 +89,17 @@ export default function POS({ user }) {
     loadData();
   }
 
+  const shown = products.filter((p) =>
+    (cat === "All" || p.category === cat) && p.name.toLowerCase().includes(search.toLowerCase()));
+  const productTotalPages = Math.max(1, Math.ceil(shown.length / pageSize));
+  const currentProductPage = Math.min(productPage, productTotalPages);
+  const pagedProducts = shown.slice((currentProductPage - 1) * pageSize, currentProductPage * pageSize);
+  useEffect(() => { setProductPage(1); }, [search, cat]);
+  const cartTotalPages = Math.max(1, Math.ceil(cart.length / pageSize));
+  const currentCartPage = Math.min(cartPage, cartTotalPages);
+  const pagedCart = cart.slice((currentCartPage - 1) * pageSize, currentCartPage * pageSize);
+  useEffect(() => { setCartPage(1); }, [cart.length]);
+
   if (receipt) {
     return (
       <div className="card receipt">
@@ -107,9 +123,6 @@ export default function POS({ user }) {
     );
   }
 
-  const shown = products.filter((p) =>
-    (cat === "All" || p.category === cat) && p.name.toLowerCase().includes(search.toLowerCase()));
-
   return (
     <div>
       <h1>POS / Cashier</h1>
@@ -124,7 +137,7 @@ export default function POS({ user }) {
             <div className="search"><Search size={16} /><input placeholder="Search item..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
           </div>
           <div className="grid">
-            {shown.map((p) => {
+            {pagedProducts.map((p) => {
               const out = tracksStock(p) && p.stock < 1;
               return (
                 <button key={p.id} className="item" onClick={() => addToCart(p)} disabled={out}>
@@ -135,6 +148,7 @@ export default function POS({ user }) {
               );
             })}
           </div>
+          <Pagination page={productPage} setPage={setProductPage} totalItems={shown.length} pageSize={pageSize} />
         </div>
 
         <div className="card">
@@ -145,7 +159,7 @@ export default function POS({ user }) {
           </select>
 
           {cart.length === 0 && <p className="muted">Click items to add them here.</p>}
-          {cart.map((c) => (
+          {pagedCart.map((c) => (
             <div key={c.id} className="cart-line">
               <span>{c.name}<br /><small className="muted">{peso(c.price)}</small></span>
               <span className="qty">
@@ -156,6 +170,7 @@ export default function POS({ user }) {
               </span>
             </div>
           ))}
+          <Pagination page={cartPage} setPage={setCartPage} totalItems={cart.length} pageSize={pageSize} />
 
           <hr />
           <div className="cart-line"><span>Subtotal</span><span>{peso(subtotal)}</span></div>
@@ -176,6 +191,7 @@ export default function POS({ user }) {
           <button className="btn pay" onClick={checkout} disabled={saving}>
             {saving ? "Processing..." : "Pay & Save Sale"}
           </button>
+          <ActionLoadingDialog open={saving} title="Processing sale" description="Validating stock and recording payment..." />
         </div>
       </div>
     </div>

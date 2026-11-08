@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import Modal from "../components/Modal";
+import Pagination from "../components/Pagination";
+import ActionLoadingDialog from "../components/ActionLoadingDialog";
 
 export default function Staff() {
   const [staff, setStaff] = useState([]);
@@ -8,7 +10,10 @@ export default function Staff() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ full_name: "", email: "", password: "", role: "cashier" });
   const [saving, setSaving] = useState(false);
+  const [actionType, setActionType] = useState("save");
   const [message, setMessage] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   async function load() {
     const { data, error } = await supabase.from("profiles").select("*").order("full_name");
@@ -39,6 +44,8 @@ export default function Staff() {
   async function saveUser(e) {
     e.preventDefault();
     setSaving(true);
+    setActionType("save");
+    const actionTitle = editing ? "Saving changes" : "Creating staff account";
     setMessage("");
 
     const action = editing ? "update" : "create";
@@ -64,6 +71,7 @@ export default function Staff() {
   async function deleteUser(member) {
     if (!window.confirm(`Delete ${member.full_name || member.email}? This cannot be undone.`)) return;
     setSaving(true);
+    setActionType("delete");
     setMessage("");
     const { error } = await supabase.functions.invoke("staff-admin", {
       body: { action: "delete", id: member.id },
@@ -79,6 +87,10 @@ export default function Staff() {
     setSaving(false);
   }
 
+  const totalPages = Math.max(1, Math.ceil(staff.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedStaff = staff.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
     <div>
       <h1>Staff & Roles</h1>
@@ -88,21 +100,27 @@ export default function Staff() {
           <button className="btn primary" type="button" onClick={openAdd}>Add Staff</button>
         </div>
         {message && <p className="error">{message}</p>}
-        {staff.map((member) => (
-          <div key={member.id} className="list-row staff-row">
-            <div>
-              <strong>{member.full_name || member.email || "Unnamed staff"}</strong>
-              <div className="muted staff-email">{member.email || "No email on profile"}</div>
-            </div>
-            <div className="staff-actions">
-              <span className={`tag ${member.role === "admin" ? "red" : member.role === "doctor" ? "blue" : "green"}`}>
-                {member.role}
-              </span>
-              <button className="btn small" type="button" onClick={() => openEdit(member)}>Edit</button>
-              <button className="btn small danger" type="button" disabled={saving} onClick={() => deleteUser(member)}>Delete</button>
-            </div>
-          </div>
-        ))}
+        {staff.length === 0 && <p className="muted">No staff found.</p>}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th className="right">Actions</th></tr></thead>
+            <tbody>
+              {pagedStaff.map((member, index) => (
+                <tr key={member.id}>
+                  <td><b>{(currentPage - 1) * pageSize + index + 1}</b></td>
+                  <td><b>{member.full_name || "Unnamed staff"}</b></td>
+                  <td>{member.email || "-"}</td>
+                  <td><span className={`tag ${member.role === "admin" ? "red" : member.role === "doctor" ? "blue" : "green"}`}>{member.role}</span></td>
+                  <td className="right">
+                    <button className="btn small" type="button" onClick={() => openEdit(member)}>Edit</button>{" "}
+                    <button className="btn small danger" type="button" disabled={saving} onClick={() => deleteUser(member)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} setPage={setPage} totalItems={staff.length} pageSize={pageSize} />
       </div>
 
       {showForm && (
@@ -116,6 +134,12 @@ export default function Staff() {
           </form>
         </Modal>
       )}
+      <ActionLoadingDialog
+        open={saving}
+        title={actionType === "delete" ? "Deleting staff account" : editing ? "Saving staff changes" : "Creating staff account"}
+        description={actionType === "delete" ? "Removing account access and profile data..." : "Updating staff information and permissions..."}
+        danger={actionType === "delete"}
+      />
     </div>
   );
 }
