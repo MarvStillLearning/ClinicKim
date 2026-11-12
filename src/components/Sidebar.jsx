@@ -66,13 +66,18 @@ export default function Sidebar({ page, setPage, role, email }) {
             <div className="nav-group" key={group}>
               {!collapsed && <div className="nav-section-label">{group}</div>}
               {items.map((item) => (
-                <motion.button
+                <motion.a
                   key={item.id}
-                  type="button"
+                  href={`/${item.id}`}
                   title={item.label}
                   aria-label={item.label}
+                  aria-current={page === item.id ? "page" : undefined}
                   className={page === item.id ? "nav active" : "nav"}
-                  onClick={() => setPage(item.id)}
+                  onClick={(event) => {
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    setPage(item.id);
+                  }}
                   whileHover={{ x: collapsed ? 0 : 2 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -85,7 +90,7 @@ export default function Sidebar({ page, setPage, role, email }) {
                   )}
                   <item.icon size={18} />
                   {!collapsed && <span>{item.label}</span>}
-                </motion.button>
+                </motion.a>
               ))}
             </div>
           );

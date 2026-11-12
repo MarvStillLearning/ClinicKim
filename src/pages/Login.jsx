@@ -6,6 +6,12 @@ import { Stethoscope } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 
+function handleAppLink(event, navigate) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  navigate?.();
+}
+
 export default function Login({ onBookAppointment, onViewPrices }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,8 +37,8 @@ export default function Login({ onBookAppointment, onViewPrices }) {
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <button className="btn primary" type="submit" disabled={loggingIn}>{loggingIn ? "Logging in..." : "Log in"}</button>
-        <button className="btn" type="button" onClick={onBookAppointment}>Book an Appointment</button>
-        <button className="btn" type="button" onClick={onViewPrices}>View Medicines & Services</button>
+        <a className="btn" href="/book-appointment" onClick={(event) => handleAppLink(event, onBookAppointment)}>Book an Appointment</a>
+        <a className="btn" href="/prices" onClick={(event) => handleAppLink(event, onViewPrices)}>View Medicines & Services</a>
         {message && <p className="error">{message}</p>}
       </form>
       <ActionLoadingDialog open={loggingIn} title="Signing in" description="Verifying your clinic account..." />

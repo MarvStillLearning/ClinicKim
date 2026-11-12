@@ -5,6 +5,12 @@ import { ArrowLeft, Search, Stethoscope } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
 import Pagination from "../components/Pagination";
 
+function handleAppLink(event, navigate) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  navigate?.();
+}
+
 export default function PublicPrices({ onBack }) {
   const [products, setProducts] = useState([]);
   const [category, setCategory] = useState("All");
@@ -57,7 +63,7 @@ export default function PublicPrices({ onBack }) {
           </div>
           <div className="public-header-actions">
             <ThemeToggle />
-            <button className="btn" type="button" onClick={onBack}><ArrowLeft size={16} /> Back to Login</button>
+            <a className="btn" href="/login" onClick={(event) => handleAppLink(event, onBack)}><ArrowLeft size={16} /> Back to Login</a>
           </div>
         </header>
 

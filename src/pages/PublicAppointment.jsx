@@ -95,6 +95,12 @@ async function invokeBookingFunction(body) {
   return data;
 }
 
+function handleAppLink(event, navigate) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  navigate?.();
+}
+
 export default function PublicAppointment({ onBack }) {
   const [form, setForm] = useState({
     full_name: "",
@@ -338,7 +344,7 @@ export default function PublicAppointment({ onBack }) {
             </p>
             {!notificationSent && <p className="error">Your booking was saved, but the clinic email notification could not be sent. Please contact the clinic to confirm.</p>}
             {bookingCode && <button className="btn" type="button" onClick={() => window.print()}>Print Confirmation</button>}
-            <button className="btn primary" type="button" onClick={onBack}>Back to Login</button>
+            <a className="btn primary" href="/login" onClick={(event) => handleAppLink(event, onBack)}>Back to Login</a>
           </div>
         ) : mode === "create" ? (
           <>
@@ -349,7 +355,7 @@ export default function PublicAppointment({ onBack }) {
               <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
             </label>
             <label>Reason for Visit
-              <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
+              <textarea maxLength={500} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
             </label>
             <label>Location
               <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required>
@@ -377,7 +383,7 @@ export default function PublicAppointment({ onBack }) {
             {message && <p className="error">{message}</p>}
             <button className="btn primary" type="submit" disabled={saving}>{saving ? "Submitting..." : "Submit Appointment"}</button>
             <button className="btn" type="button" onClick={() => startMode("change")}>Change an existing appointment</button>
-            <button className="btn" type="button" onClick={onBack}>Back to Login</button>
+            <a className="btn" href="/login" onClick={(event) => handleAppLink(event, onBack)}>Back to Login</a>
           </>
         ) : (
           <>
@@ -439,7 +445,7 @@ export default function PublicAppointment({ onBack }) {
               }}>Use a different Booking ID</button>
             )}
             <button className="btn" type="button" onClick={() => startMode("create")}>Book a new appointment</button>
-            <button className="btn" type="button" onClick={onBack}>Back to Login</button>
+            <a className="btn" href="/login" onClick={(event) => handleAppLink(event, onBack)}>Back to Login</a>
           </>
         )}
       </form>

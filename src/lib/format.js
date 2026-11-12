@@ -57,6 +57,17 @@ export const nextAppointmentDateKey = (date) => {
   return appointmentDateKey(nextDate);
 };
 
+export const shiftAppointmentDateKey = (date, days) => {
+  const shiftedDate = new Date(`${date}T12:00:00+08:00`);
+  shiftedDate.setUTCDate(shiftedDate.getUTCDate() + days);
+  return appointmentDateKey(shiftedDate);
+};
+
+export const startOfAppointmentWeek = (date) => {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return shiftAppointmentDateKey(date, -((weekday + 6) % 7));
+};
+
 export function ageFrom(birthdate) {
   if (!birthdate) return "";
   const diff = Date.now() - new Date(birthdate).getTime();

@@ -10,12 +10,13 @@ import ActionLoadingDialog from "../components/ActionLoadingDialog";
 const CATEGORIES = ["Medicine", "Service"];
 const emptyItem = { name: "", category: "Medicine", price: "", stock: "", expiry_date: "" };
 
-export default function Inventory() {
+export default function Inventory({ initialLowStockOnly = false }) {
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState(emptyItem);
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
+  const [lowStockOnly, setLowStockOnly] = useState(initialLowStockOnly);
   const [page, setPage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [actionType, setActionType] = useState("save");
@@ -65,7 +66,9 @@ export default function Inventory() {
   }
 
   const shown = products.filter((p) =>
-    (cat === "All" || p.category === cat) && p.name.toLowerCase().includes(search.toLowerCase()));
+    (cat === "All" || p.category === cat)
+    && (!lowStockOnly || (p.category !== "Service" && Number(p.stock) <= 5))
+    && p.name.toLowerCase().includes(search.toLowerCase()));
   const lowStock = products.filter((p) => p.category !== "Service" && Number(p.stock) <= 5);
   const expiringSoon = products.filter((p) => {
     if (!p.expiry_date) return false;
@@ -77,12 +80,12 @@ export default function Inventory() {
   const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedShown = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  useEffect(() => { setPage(1); }, [search, cat]);
+  useEffect(() => { setPage(1); }, [search, cat, lowStockOnly]);
 
   return (
     <div>
       <div className="page-header">
-        <h1>Inventory</h1>
+        <h1>{lowStockOnly ? "Low Stock Inventory" : "Inventory"}</h1>
         <button className="btn primary" type="button" onClick={() => { setForm(emptyItem); setShowForm(true); }}>Add item</button>
       </div>
 
@@ -125,11 +128,13 @@ export default function Inventory() {
         <div className="toolbar">
           <div className="chips">
             {["All", ...CATEGORIES].map((c) => (
-              <button key={c} className={cat === c ? "chip active" : "chip"} onClick={() => setCat(c)}>{c}</button>
+              <button key={c} className={!lowStockOnly && cat === c ? "chip active" : "chip"} onClick={() => { setCat(c); setLowStockOnly(false); }}>{c}</button>
             ))}
+            <button type="button" className={lowStockOnly ? "chip active" : "chip"} onClick={() => setLowStockOnly(true)}>Low stock</button>
           </div>
           <div className="search"><Search size={16} /><input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         </div>
+        {shown.length === 0 && <p className="muted">No inventory items match these filters.</p>}
         <table>
           <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Stock</th><th>Expiry</th><th></th></tr></thead>
           <tbody>

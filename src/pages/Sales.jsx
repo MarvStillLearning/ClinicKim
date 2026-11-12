@@ -1,21 +1,44 @@
 // Sales history: click a sale to see the items.
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { peso, dateTime, startOfToday } from "../lib/format";
+import { peso, dateTime, appointmentDateKey, appointmentDateBoundary, nextAppointmentDateKey, startOfAppointmentWeek } from "../lib/format";
 import Pagination from "../components/Pagination";
 
-export default function Sales() {
+export default function Sales({ initialFilter = "Today" }) {
   const [sales, setSales] = useState([]);
-  const [filter, setFilter] = useState("Today");
+  const [filter, setFilter] = useState(initialFilter);
+  const [selectedDate, setSelectedDate] = useState("");
   const [openId, setOpenId] = useState(null);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
   const pageSize = 10;
 
   useEffect(() => {
-    supabase.from("sales").select("*, patients(full_name)").order("created_at", { ascending: false }).limit(300)
-      .then(({ data }) => setSales(data || []));
-  }, []);
+    let active = true;
+    async function loadSales() {
+      setLoading(true);
+      let query = supabase.from("sales").select("*, patients(full_name)").order("created_at", { ascending: false });
+      if (selectedDate) {
+        query = query
+          .gte("created_at", appointmentDateBoundary(selectedDate))
+          .lt("created_at", appointmentDateBoundary(nextAppointmentDateKey(selectedDate)));
+      } else {
+        query = query.limit(1000);
+      }
+      const { data, error } = await query;
+      if (!active) return;
+      if (error) {
+        alert(error.message);
+        setSales([]);
+      } else {
+        setSales(data || []);
+      }
+      setLoading(false);
+    }
+    loadSales();
+    return () => { active = false; };
+  }, [selectedDate]);
 
   async function toggle(id) {
     if (openId === id) return setOpenId(null);
@@ -24,13 +47,23 @@ export default function Sales() {
     setOpenId(id);
   }
 
-  const today = startOfToday().toDateString();
-  const shown = sales.filter((s) => filter === "All" || new Date(s.created_at).toDateString() === today);
+  const today = appointmentDateKey(new Date());
+  const weekStart = startOfAppointmentWeek(today);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const shown = sales.filter((sale) => {
+    const date = appointmentDateKey(sale.created_at);
+    if (selectedDate) return date === selectedDate;
+    if (filter === "All") return true;
+    if (filter === "Today") return date === today;
+    if (filter === "This week") return date >= weekStart && date <= today;
+    if (filter === "This month") return date >= monthStart && date <= today;
+    return false;
+  });
   const sum = shown.reduce((t, s) => t + Number(s.total), 0);
   const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedShown = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  useEffect(() => { setPage(1); }, [filter]);
+  useEffect(() => { setPage(1); }, [filter, selectedDate]);
 
   function exportCsv() {
     const escape = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -59,17 +92,29 @@ export default function Sales() {
     <div>
       <h1>Sales History</h1>
       <div className="stats">
-        <div className="stat"><div><small>{filter === "Today" ? "Today's sales" : "Total (last 300)"}</small><h2>{peso(sum)}</h2></div></div>
+        <div className="stat"><div><small>{selectedDate ? `Sales on ${selectedDate}` : filter === "All" ? "Total (up to 1,000)" : filter === "Today" ? "Today's sales" : `${filter} sales`}</small><h2>{peso(sum)}</h2></div></div>
         <div className="stat"><div><small>Transactions</small><h2>{shown.length}</h2></div></div>
       </div>
       <div className="card">
         <div className="toolbar">
           <div className="chips">
-            {["Today", "All"].map((f) => <button key={f} className={filter === f ? "chip active" : "chip"} onClick={() => setFilter(f)}>{f}</button>)}
+            {["Today", "This week", "This month", "All"].map((f) => (
+              <button
+                type="button"
+                key={f}
+                className={!selectedDate && filter === f ? "chip active" : "chip"}
+                onClick={() => { setSelectedDate(""); setFilter(f); }}
+              >
+                {f}
+              </button>
+            ))}
           </div>
-          <button className="btn" type="button" onClick={exportCsv}>Export CSV</button>
+          <div className="sales-history-actions">
+            <label className="sales-date-filter">Specific date<input type="date" value={selectedDate} max={today} onChange={(event) => setSelectedDate(event.target.value)} /></label>
+            <button className="btn" type="button" onClick={exportCsv}>Export CSV</button>
+          </div>
         </div>
-        <table>
+        {loading ? <p className="muted">Loading sales...</p> : shown.length === 0 ? <p className="muted">No sales found for this period.</p> : <table>
           <thead><tr><th>#</th><th>Date</th><th>Patient</th><th>Method</th><th>Total</th></tr></thead>
           <tbody>
             {pagedShown.map((s, index) => (
@@ -87,8 +132,8 @@ export default function Sales() {
               </>
             ))}
           </tbody>
-        </table>
-        <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />
+        </table>}
+        {!loading && <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />}
       </div>
     </div>
   );

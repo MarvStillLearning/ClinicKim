@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, Printer } from "lucide-react";
+import { Search, Printer, UserRound } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ageFrom, dateTime, CLINIC_NAME } from "../lib/format";
 import Pagination from "../components/Pagination";
@@ -16,7 +16,7 @@ const emptyConsultation = {
   notes: "",
 };
 
-export default function Clinical() {
+export default function Clinical({ initialPatientId = "" }) {
   const [patients, setPatients] = useState([]);
   const [records, setRecords] = useState([]);
   const [patientId, setPatientId] = useState("");
@@ -26,7 +26,7 @@ export default function Clinical() {
   const [message, setMessage] = useState("");
   const [patientPage, setPatientPage] = useState(1);
   const [recordPage, setRecordPage] = useState(1);
-  const [pendingPatient, setPendingPatient] = useState(null);
+  const [patientPickerOpen, setPatientPickerOpen] = useState(false);
   const pageSize = 10;
 
   async function loadPatients() {
@@ -46,6 +46,14 @@ export default function Clinical() {
 
   useEffect(() => { loadPatients(); }, []);
 
+  useEffect(() => {
+    if (!initialPatientId) return;
+    const initialPatient = patients.find((item) => String(item.id) === String(initialPatientId));
+    if (initialPatient && String(patientId) !== String(initialPatient.id)) {
+      selectPatient(String(initialPatient.id));
+    }
+  }, [initialPatientId, patients]);
+
   function selectPatient(id) {
     setPatientId(id);
     setForm(emptyConsultation);
@@ -54,10 +62,9 @@ export default function Clinical() {
     else setRecords([]);
   }
 
-  function confirmPatient() {
-    if (!pendingPatient) return;
-    selectPatient(String(pendingPatient.id));
-    setPendingPatient(null);
+  function choosePatient(item) {
+    selectPatient(String(item.id));
+    setPatientPickerOpen(false);
   }
 
   async function saveConsultation(e) {
@@ -143,80 +150,69 @@ export default function Clinical() {
         </div>
       </div>
 
-      <div className="consultation-layout">
-        <div className="card consultation-patient-list">
-          <h3>Select patient</h3>
-          <div className="search">
-            <Search size={16} />
-            <input placeholder="Search patient..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
-          <div className="consultation-patient-options">
-            {pagedPatients.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={`consultation-patient-option ${String(item.id) === String(patientId) ? "active" : ""}`}
-                onClick={() => setPendingPatient(item)}
-              >
-                <b>{item.full_name}</b>
-                <small>{item.phone || "No phone"}</small>
-              </button>
-            ))}
-            {pagedPatients.length === 0 && <p className="muted">No patients found.</p>}
-          </div>
-          <Pagination page={patientPage} setPage={setPatientPage} totalItems={shownPatients.length} pageSize={pageSize} />
-        </div>
-
-        <div className="consultation-workspace">
+      <div className="consultation-workspace">
+        <div className="card consultation-patient-select">
           {patient && (
-            <div className="card consultation-summary">
+            <div className="consultation-summary">
               <div>
                 <small>Selected patient</small>
                 <h3>{patient.full_name}</h3>
               </div>
-              <span>{patient.sex || "-"} · {patient.birthdate ? `${ageFrom(patient.birthdate)} years` : "Age not set"}</span>
+              <div className="consultation-selected-details">
+                <span><b>Sex / age:</b> {patient.sex || "Not recorded"} · {patient.birthdate ? `${ageFrom(patient.birthdate)} years` : "Age not set"}</span>
+                <span><b>Phone:</b> {patient.phone || "Not recorded"}</span>
+                <span><b>Address:</b> {patient.address || "Not recorded"}</span>
+                <span className={patient.allergies ? "consultation-allergies" : ""}><b>Allergies:</b> {patient.allergies || "None recorded"}</span>
+                <span><b>Emergency contact:</b> {[patient.emergency_contact_name, patient.emergency_contact].filter(Boolean).join(" · ") || "Not recorded"}</span>
+              </div>
             </div>
           )}
+          {!patient && <p className="muted">Select a patient before starting a consultation.</p>}
+          <button className="btn primary" type="button" onClick={() => {
+            setPatientPickerOpen(true);
+          }}>
+            <UserRound size={16} /> {patient ? "Change patient" : "Select patient"}
+          </button>
+        </div>
 
-          <form className="card form-grid consultation-form" onSubmit={saveConsultation}>
-            <h3>New consultation</h3>
-            {message && <p className="error modal-message">{message}</p>}
-            <label>Chief complaint<input value={form.complaint} onChange={set("complaint")} required /></label>
-            <label>Blood pressure<input value={form.bp} onChange={set("bp")} placeholder="120/80" /></label>
-            <label>Temperature (°C)<input value={form.temperature} onChange={set("temperature")} /></label>
-            <label>Weight (kg)<input type="number" step="0.1" value={form.weight} onChange={set("weight")} /></label>
-            <label>Diagnosis<input value={form.diagnosis} onChange={set("diagnosis")} required /></label>
-            <label>Treatment / prescription<textarea value={form.treatment} onChange={set("treatment")} /></label>
-            <label>Doctor's notes<textarea value={form.notes} onChange={set("notes")} /></label>
-            <div className="modal-actions">
-              <button className="btn primary" type="submit" disabled={saving || !patientId}>
-                {saving ? "Saving..." : "Save consultation"}
-              </button>
-            </div>
-          </form>
-
-          <div className="card consultation-history">
-            <h3>Consultation history</h3>
-            {!patientId && <p className="muted">Select a patient to view consultation history.</p>}
-            {patientId && records.length === 0 && <p className="muted">No consultations yet.</p>}
-            {pagedRecords.map((record) => (
-              <div className="consultation-record" key={record.id}>
-                <div className="consultation-record-header">
-                  <span><b>{dateTime(record.created_at)}</b></span>
-                  <button className="btn small" type="button" onClick={() => printPrescription(record)}>
-                    <Printer size={14} /> Print Rx
-                  </button>
-                </div>
-                <div className="consultation-record-grid">
-                  <div><small>Complaint</small><p>{record.complaint || "-"}</p></div>
-                  <div><small>Vitals</small><p>BP: {record.bp || "-"} · Temp: {record.temperature || "-"} · Weight: {record.weight || "-"} kg</p></div>
-                  <div><small>Diagnosis</small><p>{record.diagnosis || "-"}</p></div>
-                  <div><small>Prescription</small><p>{record.treatment || "-"}</p></div>
-                </div>
-              </div>
-            ))}
-            {patientId && <Pagination page={recordPage} setPage={setRecordPage} totalItems={records.length} pageSize={pageSize} />}
+        <form className="card form-grid consultation-form" onSubmit={saveConsultation}>
+          <h3>New consultation</h3>
+          {message && <p className="error modal-message">{message}</p>}
+          <label>Chief complaint<input value={form.complaint} onChange={set("complaint")} required /></label>
+          <label>Blood pressure<input value={form.bp} onChange={set("bp")} placeholder="120/80" /></label>
+          <label>Temperature (°C)<input value={form.temperature} onChange={set("temperature")} /></label>
+          <label>Weight (kg)<input type="number" step="0.1" value={form.weight} onChange={set("weight")} /></label>
+          <label>Diagnosis<input value={form.diagnosis} onChange={set("diagnosis")} required /></label>
+          <label>Treatment / prescription<textarea value={form.treatment} onChange={set("treatment")} /></label>
+          <label>Doctor's notes<textarea value={form.notes} onChange={set("notes")} /></label>
+          <div className="modal-actions">
+            <button className="btn primary" type="submit" disabled={saving || !patientId}>
+              {saving ? "Saving..." : "Save consultation"}
+            </button>
           </div>
+        </form>
+
+        <div className="card consultation-history">
+          <h3>Consultation history</h3>
+          {!patientId && <p className="muted">Select a patient to view consultation history.</p>}
+          {patientId && records.length === 0 && <p className="muted">No consultations yet.</p>}
+          {pagedRecords.map((record) => (
+            <div className="consultation-record" key={record.id}>
+              <div className="consultation-record-header">
+                <span><b>{dateTime(record.created_at)}</b></span>
+                <button className="btn small" type="button" onClick={() => printPrescription(record)}>
+                  <Printer size={14} /> Print Rx
+                </button>
+              </div>
+              <div className="consultation-record-grid">
+                <div><small>Complaint</small><p>{record.complaint || "-"}</p></div>
+                <div><small>Vitals</small><p>BP: {record.bp || "-"} · Temp: {record.temperature || "-"} · Weight: {record.weight || "-"} kg</p></div>
+                <div><small>Diagnosis</small><p>{record.diagnosis || "-"}</p></div>
+                <div><small>Prescription</small><p>{record.treatment || "-"}</p></div>
+              </div>
+            </div>
+          ))}
+          {patientId && <Pagination page={recordPage} setPage={setRecordPage} totalItems={records.length} pageSize={pageSize} />}
         </div>
       </div>
 
@@ -225,26 +221,37 @@ export default function Clinical() {
         title="Saving consultation"
         description="Recording diagnosis, treatment, and prescription..."
       />
-      <Modal title="Confirm patient before consultation" open={Boolean(pendingPatient)} onClose={() => setPendingPatient(null)} className="staff-modal">
-        {pendingPatient && (
-          <div className="patient-confirmation">
-            <h3>{pendingPatient.full_name}</h3>
-            <p><b>Phone:</b> {pendingPatient.phone || "Not recorded"}</p>
-            <p><b>Sex / Age:</b> {pendingPatient.sex || "-"}{pendingPatient.birthdate ? ` · ${ageFrom(pendingPatient.birthdate)} years` : ""}</p>
-            <p><b>Address:</b> {pendingPatient.address || "Not recorded"}</p>
-            {pendingPatient.allergies && <p className="alert"><b>Allergies:</b> {pendingPatient.allergies}</p>}
-            {(pendingPatient.emergency_contact_name || pendingPatient.emergency_contact) && (
-              <p>
-                <b>Emergency contact:</b> {pendingPatient.emergency_contact_name || "Name not recorded"}
-                {pendingPatient.emergency_contact && ` · ${pendingPatient.emergency_contact}`}
-              </p>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setPendingPatient(null)}>Cancel</button>
-              <button type="button" className="btn primary" onClick={confirmPatient}>Confirm and consult</button>
-            </div>
-          </div>
-        )}
+      <Modal
+        title="Select patient"
+        open={patientPickerOpen}
+        onClose={() => setPatientPickerOpen(false)}
+        className="consultation-patient-modal"
+      >
+        <div className="search">
+          <Search size={16} />
+          <input placeholder="Search patient..." value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
+        </div>
+        <div className="consultation-patient-options">
+          {pagedPatients.map((item) => (
+            <article className="consultation-patient-option" key={item.id}>
+              <div className="consultation-patient-option-header">
+                <b>{item.full_name}</b>
+                <button type="button" className="btn small primary" onClick={() => choosePatient(item)}>Select patient</button>
+              </div>
+              <div className="consultation-patient-details">
+                <div><small>Sex / age</small><span>{item.sex || "Not recorded"} · {item.birthdate ? `${ageFrom(item.birthdate)} years` : "Age not set"}</span></div>
+                <div><small>Birth date</small><span>{item.birthdate || "Not recorded"}</span></div>
+                <div><small>Phone</small><span>{item.phone || "Not recorded"}</span></div>
+                <div><small>Address</small><span>{item.address || "Not recorded"}</span></div>
+                <div className={item.allergies ? "consultation-allergies" : ""}><small>Allergies</small><span>{item.allergies || "None recorded"}</span></div>
+                <div><small>Emergency contact name</small><span>{item.emergency_contact_name || "Not recorded"}</span></div>
+                <div><small>Emergency contact phone</small><span>{item.emergency_contact || "Not recorded"}</span></div>
+              </div>
+            </article>
+          ))}
+          {pagedPatients.length === 0 && <p className="muted">No patients found.</p>}
+        </div>
+        <Pagination page={patientPage} setPage={setPatientPage} totalItems={shownPatients.length} pageSize={pageSize} />
       </Modal>
     </div>
   );

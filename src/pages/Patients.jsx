@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Eye } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ageFrom, appointmentDateTime } from "../lib/format";
 import Modal from "../components/Modal";
@@ -12,7 +12,6 @@ const emptyPatient = {
   sex: "Male",
   phone: "",
   address: "",
-  allergies: "",
   emergency_contact_name: "",
   emergency_contact: "",
 };
@@ -22,6 +21,7 @@ export default function Patients() {
   const [timeline, setTimeline] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [actionType, setActionType] = useState("save");
@@ -52,6 +52,13 @@ export default function Patients() {
     setTimeline(items);
   }
 
+  async function viewPatient(patient) {
+    setSelected(patient);
+    setTimeline([]);
+    setProfileOpen(true);
+    await loadTimeline(patient);
+  }
+
   async function savePatient(e) {
     e.preventDefault();
     setSaving(true);
@@ -61,6 +68,7 @@ export default function Patients() {
     const data = { ...form, birthdate: form.birthdate || null };
     delete data.id;
     delete data.created_at;
+    delete data.allergies;
 
     const result = form.id
       ? await supabase.from("patients").update(data).eq("id", form.id).select().single()
@@ -115,7 +123,7 @@ export default function Patients() {
         </div>
       </div>
 
-      <div className="two-col wide-left">
+      <div>
         <div className="card">
           <div className="toolbar">
             <div className="search">
@@ -133,25 +141,19 @@ export default function Patients() {
                 <thead><tr><th>#</th><th>Name</th><th>Sex / Age</th><th>Phone</th><th className="right">Actions</th></tr></thead>
                 <tbody>
                   {pagedPatients.map((patient, index) => (
-                    <tr
-                      key={patient.id}
-                      className={selected?.id === patient.id ? "clickable selected" : "clickable"}
-                      onClick={() => loadTimeline(patient)}
-                    >
+                    <tr key={patient.id}>
                       <td><b>{(currentPage - 1) * pageSize + index + 1}</b></td>
                       <td><b>{patient.full_name}</b></td>
                       <td>{patient.sex || "-"}{patient.birthdate ? ` · ${ageFrom(patient.birthdate)} yrs` : ""}</td>
                       <td>{patient.phone || "-"}</td>
                       <td className="right">
-                        <button className="btn small" type="button" disabled={saving} onClick={(e) => {
-                          e.stopPropagation();
-                          loadTimeline(patient);
-                          setForm({ ...patient });
-                        }}>Edit</button>{" "}
-                        <button className="btn small danger" type="button" disabled={saving} onClick={(e) => {
-                          e.stopPropagation();
-                          deletePatient(patient);
-                        }}>Delete</button>
+                        <div className="patient-row-actions">
+                          <button className="btn small" type="button" disabled={saving} onClick={() => viewPatient(patient)}>
+                            <Eye size={14} /> View information
+                          </button>
+                          <button className="btn small" type="button" disabled={saving} onClick={() => setForm({ ...patient })}>Edit</button>
+                          <button className="btn small danger" type="button" disabled={saving} onClick={() => deletePatient(patient)}>Delete</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -162,38 +164,34 @@ export default function Patients() {
           <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />
         </div>
 
-        <div>
-          {!selected ? (
-            <div className="card">
-              <p className="muted">Select a patient to view their profile.</p>
-            </div>
-          ) : (
-            <div className="card">
-              <div className="toolbar">
-                <h3>{selected.full_name}</h3>
-                <button className="btn" type="button" onClick={() => setForm({ ...selected })}>Edit</button>
-              </div>
-              <p>{selected.sex || "-"} · {selected.birthdate ? `${ageFrom(selected.birthdate)} years` : "Age not set"} · {selected.phone || "No phone"}</p>
-              {selected.address && <p><small>{selected.address}</small></p>}
-              {selected.allergies && <p className="alert">Allergies: {selected.allergies}</p>}
-              {(selected.emergency_contact_name || selected.emergency_contact) && (
-                <p><small>
-                  Emergency contact: {selected.emergency_contact_name || "Name not recorded"}
-                  {selected.emergency_contact && ` · ${selected.emergency_contact}`}
-                </small></p>
-              )}
-              <h3 style={{ marginTop: 18 }}>Patient timeline</h3>
-              {timeline.length === 0 && <p className="muted">No appointments, consultations, or payments yet.</p>}
-              {timeline.map((item) => (
-                <div className="list-row" key={item.id}>
-                  <span><b>{item.type}</b><br /><small>{item.detail}</small></span>
-                  <span className="muted">{item.type === "Appointment" ? appointmentDateTime(item.date) : new Date(item.date).toLocaleString("en-PH")}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
+
+      <Modal title="Patient information" open={profileOpen && Boolean(selected)} onClose={() => setProfileOpen(false)} className="patient-profile-modal">
+        {selected && (
+          <>
+            <div className="patient-profile-details">
+              <h3>{selected.full_name}</h3>
+              <div><small>Sex</small><span>{selected.sex || "Not recorded"}</span></div>
+              <div><small>Birthdate / age</small><span>{selected.birthdate ? `${selected.birthdate} · ${ageFrom(selected.birthdate)} years` : "Not recorded"}</span></div>
+              <div><small>Phone</small><span>{selected.phone || "Not recorded"}</span></div>
+              <div><small>Address</small><span>{selected.address || "Not recorded"}</span></div>
+              <div><small>Emergency contact name</small><span>{selected.emergency_contact_name || "Not recorded"}</span></div>
+              <div><small>Emergency contact phone</small><span>{selected.emergency_contact || "Not recorded"}</span></div>
+            </div>
+            <h3 className="patient-profile-timeline-title">Patient timeline</h3>
+            {timeline.length === 0 ? <p className="muted">No appointments, consultations, or payments yet.</p> : (
+              <div className="patient-profile-timeline">
+                {timeline.map((item) => (
+                  <div className="list-row" key={item.id}>
+                    <span><b>{item.type}</b><br /><small>{item.detail}</small></span>
+                    <span className="muted">{item.type === "Appointment" ? appointmentDateTime(item.date) : new Date(item.date).toLocaleString("en-PH")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
 
       <Modal title={form?.id ? "Edit patient" : "New patient"} open={Boolean(form)} onClose={() => setForm(null)} className="form-modal">
         {form && (
@@ -206,7 +204,6 @@ export default function Patients() {
             <label>Address<input value={form.address || ""} onChange={set("address")} /></label>
             <label>Emergency contact name<input value={form.emergency_contact_name || ""} onChange={set("emergency_contact_name")} /></label>
             <label>Emergency contact phone<input value={form.emergency_contact || ""} onChange={set("emergency_contact")} /></label>
-            <label>Allergies<input value={form.allergies || ""} onChange={set("allergies")} placeholder="e.g. Penicillin" /></label>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setForm(null)}>Cancel</button>
               <button className="btn primary" type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</button>

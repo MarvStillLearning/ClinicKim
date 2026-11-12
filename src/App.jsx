@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import Sidebar from "./components/Sidebar.jsx";
+import AppTopbar from "./components/AppTopbar.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import POS from "./pages/POS.jsx";
@@ -16,13 +17,38 @@ import PublicAppointment from "./pages/PublicAppointment.jsx";
 import PublicPrices from "./pages/PublicPrices.jsx";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
+const PAGE_IDS = new Set(["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit"]);
+
+function pageFromPathname(pathname) {
+  const page = pathname.replace(/^\/+|\/+$/g, "");
+  return PAGE_IDS.has(page) ? page : "dashboard";
+}
+
+function publicPageFromPathname(pathname) {
+  const path = pathname.replace(/^\/+|\/+$/g, "");
+  if (path === "book-appointment") return "appointment";
+  if (path === "prices") return "prices";
+  return null;
+}
+
+function pathForPublicPage(publicPage) {
+  if (publicPage === "appointment") return "/book-appointment";
+  if (publicPage === "prices") return "/prices";
+  return "/login";
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState("cashier"); // admin, doctor, or cashier
-  const [page, setPage] = useState("dashboard");
+  const [roleLoaded, setRoleLoaded] = useState(false);
+  const [page, setPage] = useState(() => pageFromPathname(window.location.pathname));
   const [appointmentsFilter, setAppointmentsFilter] = useState("Upcoming");
+  const [salesFilter, setSalesFilter] = useState("Today");
+  const [consultationPatientId, setConsultationPatientId] = useState("");
+  const [inventoryLowStockOnly, setInventoryLowStockOnly] = useState(false);
+  const [posLowStockOnly, setPosLowStockOnly] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [publicPage, setPublicPage] = useState(null);
+  const [publicPage, setPublicPage] = useState(() => publicPageFromPathname(window.location.pathname));
   const reducedMotion = useReducedMotion();
 
   const accessByRole = {
@@ -30,6 +56,38 @@ export default function App() {
     doctor: ["dashboard", "patients", "consultations", "appointments", "inventory"],
     cashier: ["dashboard", "pos", "sales"],
   };
+
+  function preparePage(nextPage) {
+    if (nextPage === "appointments") setAppointmentsFilter("Upcoming");
+    if (nextPage === "sales") setSalesFilter("Today");
+    if (nextPage === "consultations") setConsultationPatientId("");
+    if (nextPage === "inventory") setInventoryLowStockOnly(false);
+    if (nextPage === "pos") setPosLowStockOnly(false);
+  }
+
+  function navigateToPage(nextPage) {
+    preparePage(nextPage);
+    setPage(nextPage);
+    window.history.pushState({ page: nextPage }, "", `/${nextPage}`);
+  }
+
+  function navigateToPublicPage(nextPublicPage) {
+    setPublicPage(nextPublicPage);
+    window.history.pushState({ publicPage: nextPublicPage }, "", pathForPublicPage(nextPublicPage));
+  }
+
+  useEffect(() => {
+    function handlePopState() {
+      const nextPublicPage = publicPageFromPathname(window.location.pathname);
+      setPublicPage(nextPublicPage);
+      if (nextPublicPage || window.location.pathname === "/login" || window.location.pathname === "/") return;
+      const nextPage = pageFromPathname(window.location.pathname);
+      preparePage(nextPage);
+      setPage(nextPage);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Check if someone is already logged in
   useEffect(() => {
@@ -45,10 +103,37 @@ export default function App() {
 
   // Get the user's role from the profiles table
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setRoleLoaded(false);
+      return;
+    }
     supabase.from("profiles").select("role").eq("id", user.id).single()
-      .then(({ data }) => setRole(data?.role || "cashier"));
+      .then(({ data }) => {
+        setRole(data?.role || "cashier");
+        setRoleLoaded(true);
+      });
   }, [user]);
+
+  const activePage = (accessByRole[role] || []).includes(page) ? page : "dashboard";
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      const expectedPath = pathForPublicPage(publicPage);
+      if (window.location.pathname !== expectedPath) {
+        window.history.replaceState({ publicPage }, "", expectedPath);
+      }
+      return;
+    }
+  }, [loading, publicPage, user]);
+
+  useEffect(() => {
+    if (!user || !roleLoaded) return;
+    const expectedPath = `/${activePage}`;
+    if (window.location.pathname !== expectedPath) {
+      window.history.replaceState({ page: activePage }, "", expectedPath);
+    }
+  }, [activePage, roleLoaded, user]);
 
   if (loading) return (
     <div className="center" role="status" aria-live="polite">
@@ -56,50 +141,75 @@ export default function App() {
     </div>
   );
   if (!user && publicPage === "appointment") {
-    return <PublicAppointment onBack={() => setPublicPage(null)} />;
+    return <PublicAppointment onBack={() => navigateToPublicPage(null)} />;
   }
   if (!user && publicPage === "prices") {
-    return <PublicPrices onBack={() => setPublicPage(null)} />;
+    return <PublicPrices onBack={() => navigateToPublicPage(null)} />;
   }
-  if (!user) return <Login onBookAppointment={() => setPublicPage("appointment")} onViewPrices={() => setPublicPage("prices")} />;
-  const activePage = (accessByRole[role] || []).includes(page) ? page : "dashboard";
+  if (!user) return <Login onBookAppointment={() => navigateToPublicPage("appointment")} onViewPrices={() => navigateToPublicPage("prices")} />;
 
   return (
     <div className="layout">
       <Sidebar
         page={activePage}
-        setPage={(nextPage) => {
-          if (nextPage === "appointments") setAppointmentsFilter("Upcoming");
-          setPage(nextPage);
-        }}
+        setPage={navigateToPage}
         role={role}
         email={user.email}
       />
-      <AnimatePresence mode="wait">
-        <motion.main
-          key={activePage}
-          className="content"
-          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={reducedMotion ? undefined : { opacity: 0, y: -4 }}
-          transition={{ duration: reducedMotion ? 0 : 0.22, ease: "easeOut" }}
-        >
+      <div className="app-content-shell">
+        <AppTopbar
+          page={activePage}
+          role={role}
+          email={user.email}
+          pages={accessByRole[role] || []}
+          onNavigate={navigateToPage}
+        />
+        <AnimatePresence mode="wait">
+          <motion.main
+            key={activePage}
+            className="content"
+            initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reducedMotion ? undefined : { opacity: 0, y: -4 }}
+            transition={{ duration: reducedMotion ? 0 : 0.22, ease: "easeOut" }}
+          >
           {activePage === "dashboard" && (
-            <Dashboard onOpenAppointmentsToday={() => {
-              setAppointmentsFilter("Today");
-              setPage("appointments");
-            }} />
+            <Dashboard
+              onOpenPatients={accessByRole[role]?.includes("patients") ? () => navigateToPage("patients") : undefined}
+              onOpenSales={(filter) => {
+                navigateToPage("sales");
+                setSalesFilter(filter);
+              }}
+              onOpenAppointmentsToday={() => {
+                navigateToPage("appointments");
+                setAppointmentsFilter("Today");
+              }}
+              onOpenConsultationsToday={() => {
+                setConsultationPatientId("");
+                navigateToPage("consultations");
+              }}
+              onOpenLowStock={() => {
+                if (role === "cashier") {
+                  navigateToPage("pos");
+                  setPosLowStockOnly(true);
+                } else {
+                  navigateToPage("inventory");
+                  setInventoryLowStockOnly(true);
+                }
+              }}
+            />
           )}
-          {activePage === "pos" && <POS user={user} />}
+          {activePage === "pos" && <POS user={user} initialLowStockOnly={posLowStockOnly} />}
           {activePage === "patients" && <Patients />}
-          {activePage === "consultations" && <Clinical user={user} />}
+          {activePage === "consultations" && <Clinical user={user} initialPatientId={consultationPatientId} />}
           {activePage === "appointments" && <Appointments initialFilter={appointmentsFilter} isAdmin={role === "admin"} />}
-          {activePage === "inventory" && <Inventory />}
-          {activePage === "sales" && <Sales />}
+          {activePage === "inventory" && <Inventory initialLowStockOnly={inventoryLowStockOnly} />}
+          {activePage === "sales" && <Sales initialFilter={salesFilter} />}
           {activePage === "staff" && <Staff />}
           {activePage === "audit" && <AuditLogs />}
-        </motion.main>
-      </AnimatePresence>
+          </motion.main>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

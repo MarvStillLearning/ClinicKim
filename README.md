@@ -3,6 +3,8 @@
 ## Pages
 Dashboard, POS / Cashier, Patients (with consultations), Appointments, Inventory, Sales History, Staff & Roles.
 
+Staff workspace tabs use direct URLs such as `/dashboard`, `/patients`, `/appointments`, `/inventory`, and `/sales`. Public pages are available at `/login`, `/book-appointment`, and `/prices`. The top-bar search filters the pages available to the signed-in user's role; use Ctrl+K or Cmd+K to focus it.
+
 ## Folders
 - `supabase/schema.sql` - database tables (safe to run again)
 - `src/lib/format.js` - clinic name (EDIT THIS) + money/date helpers
@@ -18,6 +20,9 @@ Dashboard, POS / Cashier, Patients (with consultations), Appointments, Inventory
 5. `npm install` then `npm run dev`
 
 For an existing database missing the emergency contact name field, run `supabase/emergency-contact-name.sql` in Supabase SQL Editor.
+
+### Optional POS sample products
+After running `supabase/schema.sql`, run `supabase/sample-products.sql` in Supabase SQL Editor to add 20 example medicines and 20 example services. The seed skips products that already exist with the same name and category. Sample prices and stock counts are for demonstration only; review them before real use.
 
 ### Public appointments and doctor availability
 1. Run `supabase/public-booking.sql` in Supabase SQL Editor.

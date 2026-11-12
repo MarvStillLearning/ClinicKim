@@ -80,8 +80,21 @@ Deno.serve(async (req) => {
   const doctor = action !== "lookup" ? text(body.p_doctor, 100) : null;
   const location = action !== "lookup" ? text(body.p_location, 100) : null;
   const appointmentDate = apptAt ? new Date(apptAt) : null;
-  if (action !== "lookup" && (!reason || !doctor || !location || !appointmentDate || Number.isNaN(appointmentDate.getTime()))) {
-    return json(req, 400, { error: "Please provide valid appointment details" });
+  if (action !== "lookup" && (!appointmentDate || Number.isNaN(appointmentDate.getTime()))) {
+    return json(req, 400, { error: "Please select a valid appointment date and time" });
+  }
+  if (action !== "lookup" && !reason) {
+    const rawReason = body.p_reason;
+    const error = typeof rawReason === "string" && rawReason.trim().length > 500
+      ? "Reason for visit cannot exceed 500 characters"
+      : "Please provide a reason for visit";
+    return json(req, 400, { error });
+  }
+  if (action !== "lookup" && !doctor) {
+    return json(req, 400, { error: "Please select an available doctor" });
+  }
+  if (action !== "lookup" && !location) {
+    return json(req, 400, { error: "Please select a clinic location" });
   }
   if (action === "create" && !fullName) {
     return json(req, 400, { error: "Please provide a valid patient name" });

@@ -5,8 +5,9 @@ import { peso, dateTime, CLINIC_NAME } from "../lib/format";
 import { Search, Plus, Minus, Trash2 } from "lucide-react";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import Modal from "../components/Modal";
 
-export default function POS({ user }) {
+export default function POS({ user, initialLowStockOnly = false }) {
   const [products, setProducts] = useState([]);
   const [patients, setPatients] = useState([]);
   const [cart, setCart] = useState([]);
@@ -20,6 +21,8 @@ export default function POS({ user }) {
   const [saving, setSaving] = useState(false);
   const [productPage, setProductPage] = useState(1);
   const [cartPage, setCartPage] = useState(1);
+  const [catalogOpen, setCatalogOpen] = useState(initialLowStockOnly);
+  const [lowStockOnly, setLowStockOnly] = useState(initialLowStockOnly);
   const pageSize = 10;
 
   async function loadData() {
@@ -32,12 +35,14 @@ export default function POS({ user }) {
 
   const tracksStock = (item) => item.category !== "Service"; // services have no stock
 
-  function addToCart(product) {
+  function toggleProductSelection(product) {
     const found = cart.find((c) => c.id === product.id);
-    const currentQty = found ? found.qty : 0;
-    if (tracksStock(product) && currentQty >= product.stock) return alert("Not enough stock");
-    if (found) setCart(cart.map((c) => (c.id === product.id ? { ...c, qty: c.qty + 1 } : c)));
-    else setCart([...cart, { ...product, qty: 1 }]);
+    if (found) {
+      setCart(cart.filter((item) => item.id !== product.id));
+      return;
+    }
+    if (tracksStock(product) && product.stock < 1) return;
+    setCart([...cart, { ...product, qty: 1 }]);
   }
   function changeQty(item, amount) {
     const newQty = item.qty + amount;
@@ -90,7 +95,9 @@ export default function POS({ user }) {
   }
 
   const shown = products.filter((p) =>
-    (cat === "All" || p.category === cat) && p.name.toLowerCase().includes(search.toLowerCase()));
+    (cat === "All" || p.category === cat)
+    && (!lowStockOnly || (p.category !== "Service" && Number(p.stock) <= 5))
+    && p.name.toLowerCase().includes(search.toLowerCase()));
   const productTotalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentProductPage = Math.min(productPage, productTotalPages);
   const pagedProducts = shown.slice((currentProductPage - 1) * pageSize, currentProductPage * pageSize);
@@ -126,39 +133,20 @@ export default function POS({ user }) {
   return (
     <div>
       <h1>POS / Cashier</h1>
-      <div className="two-col wide-left">
+      <div className="pos-layout pos-layout-empty">
         <div className="card">
-          <div className="toolbar">
-            <div className="chips">
-              {["All", "Medicine", "Service"].map((c) => (
-                <button key={c} className={cat === c ? "chip active" : "chip"} onClick={() => setCat(c)}>{c}</button>
-              ))}
-            </div>
-            <div className="search"><Search size={16} /><input placeholder="Search item..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <div className="pos-sale-header">
+            <h3>Current sale</h3>
+            <button className="btn primary" type="button" onClick={() => setCatalogOpen(true)}>
+              <Plus size={16} /> Add items
+            </button>
           </div>
-          <div className="grid">
-            {pagedProducts.map((p) => {
-              const out = tracksStock(p) && p.stock < 1;
-              return (
-                <button key={p.id} className="item" onClick={() => addToCart(p)} disabled={out}>
-                  <b>{p.name}</b>
-                  <span className="price">{peso(p.price)}</span>
-                  <small>{tracksStock(p) ? (out ? "Out of stock" : p.stock + " in stock") : "Service"}</small>
-                </button>
-              );
-            })}
-          </div>
-          <Pagination page={productPage} setPage={setProductPage} totalItems={shown.length} pageSize={pageSize} />
-        </div>
-
-        <div className="card">
-          <h3>Current sale</h3>
           <select value={patientId} onChange={(e) => setPatientId(e.target.value)}>
             <option value="">Walk-in customer</option>
             {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
           </select>
 
-          {cart.length === 0 && <p className="muted">Click items to add them here.</p>}
+          {cart.length === 0 && <p className="muted">No items added to this sale yet.</p>}
           {pagedCart.map((c) => (
             <div key={c.id} className="cart-line">
               <span>{c.name}<br /><small className="muted">{peso(c.price)}</small></span>
@@ -177,15 +165,23 @@ export default function POS({ user }) {
           <label className="cart-line">Discount (₱)<input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} style={{ width: 110 }} /></label>
           <div className="total"><span>TOTAL</span><span>{peso(total)}</span></div>
 
-          <div className="chips">
+          <div className="chips" role="group" aria-label="Payment method">
             {["Cash", "GCash", "Card"].map((m) => (
-              <button key={m} className={method === m ? "chip active" : "chip"} onClick={() => setMethod(m)}>{m}</button>
+              <button
+                key={m}
+                type="button"
+                className={method === m ? "chip active" : "chip"}
+                aria-pressed={method === m}
+                onClick={() => setMethod(m)}
+              >
+                {m}
+              </button>
             ))}
           </div>
           <input type="number" placeholder="Amount paid" value={paid} onChange={(e) => setPaid(e.target.value)} />
           <div className="chips">
-            <button className="chip" onClick={() => setPaid(total)}>Exact</button>
-            {[100, 500, 1000].map((n) => <button key={n} className="chip" onClick={() => setPaid(n)}>₱{n}</button>)}
+            <button type="button" className="chip" onClick={() => setPaid(total)}>Exact</button>
+            {[100, 500, 1000].map((n) => <button type="button" key={n} className="chip" onClick={() => setPaid(n)}>₱{n}</button>)}
           </div>
           <div className="cart-line"><span>Change</span><b>{paid && change >= 0 ? peso(change) : peso(0)}</b></div>
           <button className="btn pay" onClick={checkout} disabled={saving}>
@@ -194,6 +190,44 @@ export default function POS({ user }) {
           <ActionLoadingDialog open={saving} title="Processing sale" description="Validating stock and recording payment..." />
         </div>
       </div>
+      <Modal title={lowStockOnly ? "Low stock items" : "Add items to sale"} open={catalogOpen} onClose={() => setCatalogOpen(false)} className="pos-catalog-modal">
+        <div className="toolbar">
+          <div className="chips">
+            {["All", "Medicine", "Service"].map((c) => (
+              <button key={c} type="button" className={!lowStockOnly && cat === c ? "chip active" : "chip"} onClick={() => { setCat(c); setLowStockOnly(false); }}>{c}</button>
+            ))}
+            <button type="button" className={lowStockOnly ? "chip active" : "chip"} onClick={() => setLowStockOnly(true)}>Low stock</button>
+          </div>
+          <div className="search"><Search size={16} /><input placeholder="Search item..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        </div>
+        <div className="grid pos-catalog-grid">
+          {pagedProducts.map((p) => {
+            const out = tracksStock(p) && p.stock < 1;
+            const selected = cart.some((item) => item.id === p.id);
+            return (
+              <label key={p.id} className={`item pos-catalog-item${selected ? " selected" : ""}${out ? " disabled" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={out}
+                  onChange={() => toggleProductSelection(p)}
+                />
+                <span className="pos-catalog-item-details">
+                  <b>{p.name}</b>
+                  <span className="price">{peso(p.price)}</span>
+                  <small>{selected ? "Selected" : tracksStock(p) ? (out ? "Out of stock" : p.stock + " in stock") : "Service"}</small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {shown.length === 0
+          ? <p className="muted">No products or services found.</p>
+          : <Pagination page={productPage} setPage={setProductPage} totalItems={shown.length} pageSize={pageSize} />}
+        <div className="modal-actions">
+          <button type="button" className="btn primary" onClick={() => setCatalogOpen(false)}>Done</button>
+        </div>
+      </Modal>
     </div>
   );
 }
