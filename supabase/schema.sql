@@ -19,6 +19,7 @@ alter table patients add column if not exists birthdate date;
 alter table patients add column if not exists sex text;
 alter table patients add column if not exists address text;
 alter table patients add column if not exists allergies text;
+alter table patients add column if not exists emergency_contact_name text;
 alter table patients add column if not exists emergency_contact text;
 
 create table if not exists records (

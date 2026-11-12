@@ -233,7 +233,12 @@ export default function Clinical() {
             <p><b>Sex / Age:</b> {pendingPatient.sex || "-"}{pendingPatient.birthdate ? ` · ${ageFrom(pendingPatient.birthdate)} years` : ""}</p>
             <p><b>Address:</b> {pendingPatient.address || "Not recorded"}</p>
             {pendingPatient.allergies && <p className="alert"><b>Allergies:</b> {pendingPatient.allergies}</p>}
-            {pendingPatient.emergency_contact && <p><b>Emergency contact:</b> {pendingPatient.emergency_contact}</p>}
+            {(pendingPatient.emergency_contact_name || pendingPatient.emergency_contact) && (
+              <p>
+                <b>Emergency contact:</b> {pendingPatient.emergency_contact_name || "Name not recorded"}
+                {pendingPatient.emergency_contact && ` · ${pendingPatient.emergency_contact}`}
+              </p>
+            )}
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setPendingPatient(null)}>Cancel</button>
               <button type="button" className="btn primary" onClick={confirmPatient}>Confirm and consult</button>

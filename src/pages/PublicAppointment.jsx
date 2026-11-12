@@ -19,6 +19,7 @@ export default function PublicAppointment({ onBack }) {
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bookingCode, setBookingCode] = useState("");
+  const [notificationSent, setNotificationSent] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
   async function submit(e) {
@@ -41,22 +42,37 @@ export default function PublicAppointment({ onBack }) {
     setSaving(true);
     setMessage("");
     const selectedTime = new Date(form.appt_at);
-    const { data, error } = await supabase.rpc("book_appointment", {
-      p_full_name: form.full_name.trim(),
-      p_phone: form.phone.trim(),
-      p_appt_at: selectedTime.toISOString(),
-      p_reason: form.reason.trim(),
-      p_doctor: form.doctor.trim(),
-      p_location: form.location,
+    const { data, error } = await supabase.functions.invoke("public-appointment", {
+      body: {
+        p_full_name: form.full_name.trim(),
+        p_phone: form.phone.trim(),
+        p_appt_at: selectedTime.toISOString(),
+        p_reason: form.reason.trim(),
+        p_doctor: form.doctor.trim(),
+        p_location: form.location,
+      },
     });
 
-    if (error?.message?.includes("Could not find the function")) {
-      setMessage("Online booking is not configured yet. The clinic administrator must run supabase/public-booking.sql in Supabase SQL Editor.");
-    } else if (error) {
-      setMessage(error.message);
+    if (error) {
+      let errorMessage = error.message;
+      if (error.context instanceof Response) {
+        try {
+          const responseBody = await error.context.json();
+          if (typeof responseBody?.error === "string") errorMessage = responseBody.error;
+        } catch {
+          errorMessage = error.message;
+        }
+      }
+      if (errorMessage.includes("public-appointment")) {
+        errorMessage = "Online booking notifications are not configured. Please contact the clinic.";
+      }
+      setMessage(errorMessage);
+    } else if (data?.error) {
+      setMessage(data.error);
     }
     else {
       setBookingCode(data?.booking_code || "");
+      setNotificationSent(Boolean(data?.notification_sent));
       setSuccess(true);
     }
     setShowConfirmation(false);
@@ -84,6 +100,7 @@ export default function PublicAppointment({ onBack }) {
               </div>
             )}
             <p className="muted">Your appointment is now marked as Scheduled. Please wait for clinic confirmation.</p>
+            {!notificationSent && <p className="error">Your booking was saved, but the clinic email notification could not be sent. Please contact the clinic to confirm.</p>}
             {bookingCode && <button className="btn" type="button" onClick={() => window.print()}>Print Confirmation</button>}
             <button className="btn primary" type="button" onClick={onBack}>Back to Login</button>
           </div>

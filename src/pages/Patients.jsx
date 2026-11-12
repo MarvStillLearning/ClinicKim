@@ -13,6 +13,7 @@ const emptyPatient = {
   phone: "",
   address: "",
   allergies: "",
+  emergency_contact_name: "",
   emergency_contact: "",
 };
 
@@ -175,7 +176,12 @@ export default function Patients() {
               <p>{selected.sex || "-"} · {selected.birthdate ? `${ageFrom(selected.birthdate)} years` : "Age not set"} · {selected.phone || "No phone"}</p>
               {selected.address && <p><small>{selected.address}</small></p>}
               {selected.allergies && <p className="alert">Allergies: {selected.allergies}</p>}
-              {selected.emergency_contact && <p><small>Emergency contact: {selected.emergency_contact}</small></p>}
+              {(selected.emergency_contact_name || selected.emergency_contact) && (
+                <p><small>
+                  Emergency contact: {selected.emergency_contact_name || "Name not recorded"}
+                  {selected.emergency_contact && ` · ${selected.emergency_contact}`}
+                </small></p>
+              )}
               <h3 style={{ marginTop: 18 }}>Patient timeline</h3>
               {timeline.length === 0 && <p className="muted">No appointments, consultations, or payments yet.</p>}
               {timeline.map((item) => (
@@ -198,7 +204,8 @@ export default function Patients() {
             <label>Sex<select value={form.sex || "Male"} onChange={set("sex")}><option>Male</option><option>Female</option></select></label>
             <label>Phone<input value={form.phone || ""} onChange={set("phone")} /></label>
             <label>Address<input value={form.address || ""} onChange={set("address")} /></label>
-            <label>Emergency contact<input value={form.emergency_contact || ""} onChange={set("emergency_contact")} /></label>
+            <label>Emergency contact name<input value={form.emergency_contact_name || ""} onChange={set("emergency_contact_name")} /></label>
+            <label>Emergency contact phone<input value={form.emergency_contact || ""} onChange={set("emergency_contact")} /></label>
             <label>Allergies<input value={form.allergies || ""} onChange={set("allergies")} placeholder="e.g. Penicillin" /></label>
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setForm(null)}>Cancel</button>
