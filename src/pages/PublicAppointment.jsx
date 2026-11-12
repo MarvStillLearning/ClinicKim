@@ -164,6 +164,7 @@ export default function PublicAppointment({ onBack }) {
         </>
       );
     }
+    if (!changeForm || !existingAppointment) return null;
     return (
       <>
         <p>Please confirm the updated appointment details.</p>
