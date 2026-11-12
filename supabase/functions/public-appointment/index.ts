@@ -60,17 +60,35 @@ Deno.serve(async (req) => {
     return json(req, 400, { error: "Invalid request body" });
   }
 
-  const fullName = text(body.p_full_name, 100);
+  const action = body.action;
+  if (!["create", "lookup", "update"].includes(String(action))) {
+    return json(req, 400, { error: "Invalid appointment action" });
+  }
+
+  const bookingCodeInput = text(body.p_booking_code, 30);
   const phone = text(body.p_phone, 30);
-  const apptAt = text(body.p_appt_at, 50);
-  const reason = text(body.p_reason, 500);
-  const doctor = text(body.p_doctor, 100);
-  const location = text(body.p_location, 100);
+  if (!phone) {
+    return json(req, 400, { error: "Booking phone number is required" });
+  }
+  if (action !== "create" && !bookingCodeInput) {
+    return json(req, 400, { error: "Booking ID and booking phone number are required" });
+  }
+
+  const fullName = action === "create" ? text(body.p_full_name, 100) : null;
+  const apptAt = action !== "lookup" ? text(body.p_appt_at, 50) : null;
+  const reason = action !== "lookup" ? text(body.p_reason, 500) : null;
+  const doctor = action !== "lookup" ? text(body.p_doctor, 100) : null;
+  const location = action !== "lookup" ? text(body.p_location, 100) : null;
   const appointmentDate = apptAt ? new Date(apptAt) : null;
-  if (!fullName || !phone || !reason || !doctor || !location || !appointmentDate || Number.isNaN(appointmentDate.getTime())) {
+  if (action !== "lookup" && (!reason || !doctor || !location || !appointmentDate || Number.isNaN(appointmentDate.getTime()))) {
     return json(req, 400, { error: "Please provide valid appointment details" });
   }
-  if (appointmentDate <= new Date()) return json(req, 400, { error: "Appointment time must be in the future" });
+  if (action === "create" && !fullName) {
+    return json(req, 400, { error: "Please provide a valid patient name" });
+  }
+  if (appointmentDate && appointmentDate <= new Date()) {
+    return json(req, 400, { error: "Appointment time must be in the future" });
+  }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
@@ -79,16 +97,40 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data, error } = await supabase.rpc("book_appointment", {
-    p_full_name: fullName,
-    p_phone: phone,
-    p_appt_at: appointmentDate.toISOString(),
-    p_reason: reason,
-    p_doctor: doctor,
-    p_location: location,
-  });
+  if (action === "lookup") {
+    const { data, error } = await supabase.rpc("get_public_appointment", {
+      p_booking_code: bookingCodeInput,
+      p_phone: phone,
+    });
+    if (error) {
+      return json(req, 400, { error: error.message });
+    }
+    return json(req, 200, data as Record<string, unknown>);
+  }
+
+  if (!appointmentDate || !reason || !doctor || !location) {
+    return json(req, 400, { error: "Please provide valid appointment details" });
+  }
+
+  const { data, error } = action === "update"
+    ? await supabase.rpc("update_public_appointment", {
+      p_booking_code: bookingCodeInput,
+      p_phone: phone,
+      p_appt_at: appointmentDate.toISOString(),
+      p_reason: reason,
+      p_doctor: doctor,
+      p_location: location,
+    })
+    : await supabase.rpc("book_appointment", {
+      p_full_name: fullName,
+      p_phone: phone,
+      p_appt_at: appointmentDate.toISOString(),
+      p_reason: reason,
+      p_doctor: doctor,
+      p_location: location,
+    });
   if (error) {
-    console.error("Appointment booking failed:", error.message);
+    console.error("Appointment request failed:", error.message);
     return json(req, 400, { error: error.message });
   }
 
@@ -106,16 +148,17 @@ Deno.serve(async (req) => {
     timeZone: "Asia/Manila",
   }).format(appointmentDate);
   const bookingCode = text(data?.booking_code, 30) || "Not available";
-  const details = [
+  const details: Array<[string, string]> = [
     ["Booking ID", bookingCode],
-    ["Patient", fullName],
     ["Phone", phone],
     ["Date and time", dateLabel],
     ["Location", location],
     ["Doctor", doctor],
     ["Reason", reason],
   ];
-  const html = `<h2>New appointment booking</h2><table>${details.map(([label, value]) =>
+  if (fullName) details.splice(1, 0, ["Patient", fullName]);
+  const heading = action === "update" ? "Appointment updated" : "New appointment booking";
+  const html = `<h2>${heading}</h2><table>${details.map(([label, value]) =>
     `<tr><th align="left" style="padding:6px 12px 6px 0">${escapeHtml(label)}</th><td style="padding:6px 0">${escapeHtml(value)}</td></tr>`
   ).join("")}</table>`;
 
@@ -129,12 +172,13 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: fromEmail,
         to: [notificationEmail],
-        subject: `New appointment booking: ${bookingCode}`,
+        subject: `${action === "update" ? "Appointment updated" : "New appointment booking"}: ${bookingCode}`,
         html,
       }),
     });
     if (!response.ok) {
-      console.error("Appointment email delivery failed with status:", response.status);
+      const errorDetails = (await response.text()).slice(0, 1000);
+      console.error("Appointment email delivery failed:", response.status, errorDetails);
       return json(req, 200, { booking_code: data?.booking_code, notification_sent: false });
     }
   } catch (error) {

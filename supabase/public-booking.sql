@@ -102,6 +102,100 @@ $$;
 revoke all on function public.book_appointment(text, text, timestamptz, text, text, text) from public;
 grant execute on function public.book_appointment(text, text, timestamptz, text, text, text) to anon, authenticated;
 
+create or replace function public.get_public_appointment(
+  p_booking_code text,
+  p_phone text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_appointment record;
+begin
+  select a.booking_code, a.appt_at, a.reason, a.doctor, a.location, a.status
+  into v_appointment
+  from public.appointments a
+  join public.patients p on p.id = a.patient_id
+  where upper(a.booking_code) = upper(trim(coalesce(p_booking_code, '')))
+    and p.phone = trim(coalesce(p_phone, ''));
+
+  if not found then
+    raise exception 'Booking ID or phone number was not recognized';
+  end if;
+  if v_appointment.status <> 'Scheduled' or v_appointment.appt_at <= now() then
+    raise exception 'This appointment can no longer be changed';
+  end if;
+
+  return jsonb_build_object(
+    'booking_code', v_appointment.booking_code,
+    'appt_at', v_appointment.appt_at,
+    'reason', v_appointment.reason,
+    'doctor', v_appointment.doctor,
+    'location', v_appointment.location
+  );
+end;
+$$;
+
+revoke all on function public.get_public_appointment(text, text) from public;
+grant execute on function public.get_public_appointment(text, text) to anon, authenticated;
+
+create or replace function public.update_public_appointment(
+  p_booking_code text,
+  p_phone text,
+  p_appt_at timestamptz,
+  p_reason text,
+  p_doctor text,
+  p_location text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_appointment_id bigint;
+  v_booking_code text;
+begin
+  if length(trim(coalesce(p_reason, ''))) = 0 or length(trim(p_reason)) > 500 then
+    raise exception 'Reason must be between 1 and 500 characters';
+  end if;
+  if p_appt_at is null or p_appt_at <= now() then
+    raise exception 'Appointment time must be in the future';
+  end if;
+  if trim(coalesce(p_doctor, '')) <> 'Monique Nolasco - Pet' then
+    raise exception 'Invalid doctor';
+  end if;
+  if trim(coalesce(p_location, '')) not in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan') then
+    raise exception 'Invalid location';
+  end if;
+
+  select a.id, a.booking_code into v_appointment_id, v_booking_code
+  from public.appointments a
+  join public.patients p on p.id = a.patient_id
+  where upper(a.booking_code) = upper(trim(coalesce(p_booking_code, '')))
+    and p.phone = trim(coalesce(p_phone, ''))
+    and a.status = 'Scheduled'
+    and a.appt_at > now()
+  for update of a;
+
+  if not found then
+    raise exception 'Booking ID or phone number was not recognized, or the appointment can no longer be changed';
+  end if;
+
+  update public.appointments
+  set appt_at = p_appt_at,
+      reason = trim(p_reason),
+      doctor = trim(p_doctor),
+      location = trim(p_location)
+  where id = v_appointment_id;
+
+  return jsonb_build_object('booking_code', v_booking_code);
+end;
+$$;
+
+revoke all on function public.update_public_appointment(text, text, timestamptz, text, text, text) from public;
+grant execute on function public.update_public_appointment(text, text, timestamptz, text, text, text) to anon, authenticated;
+
 alter table public.appointments add column if not exists duration_minutes integer not null default 30;
 
 create or replace function public.prevent_doctor_double_booking()
