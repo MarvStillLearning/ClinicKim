@@ -44,8 +44,20 @@ create table if not exists appointments (
   status text not null default 'Scheduled',
   created_at timestamptz default now()
 );
-alter table appointments add column if not exists duration_minutes integer not null default 30;
 alter table appointments add column if not exists location text;
+
+create table if not exists doctor_schedule_dates (
+  id bigint generated always as identity primary key,
+  doctor text not null,
+  location text not null check (location in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan')),
+  available_date date not null,
+  available_from time not null default time '08:00',
+  available_until time not null default time '17:00',
+  created_at timestamptz not null default now(),
+  unique (doctor, location, available_date),
+  constraint doctor_schedule_dates_hours_check
+    check (available_from = time '08:00' and available_until = time '17:00')
+);
 
 create table if not exists products (
   id bigint generated always as identity primary key,
@@ -191,7 +203,7 @@ $$;
 do $$
 declare t text;
 begin
-  for t in select unnest(array['profiles','patients','records','appointments','products','sales','sale_items'])
+  for t in select unnest(array['profiles','patients','records','appointments','products','sales','sale_items','doctor_schedule_dates'])
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "staff only" on public.%I', t);
@@ -239,6 +251,13 @@ create policy "appointments staff update" on public.appointments for update to a
   with check (public.current_user_role() in ('admin', 'doctor', 'cashier'));
 create policy "appointments admin delete" on public.appointments for delete to authenticated
   using (public.current_user_role() = 'admin');
+
+grant select, insert, delete on public.doctor_schedule_dates to authenticated;
+grant usage, select on sequence public.doctor_schedule_dates_id_seq to authenticated;
+drop policy if exists "doctor schedule dates admin manage" on public.doctor_schedule_dates;
+create policy "doctor schedule dates admin manage" on public.doctor_schedule_dates for all to authenticated
+  using (public.current_user_role() = 'admin')
+  with check (public.current_user_role() = 'admin');
 
 drop policy if exists "products staff read" on public.products;
 drop policy if exists "products admin write" on public.products;
@@ -468,6 +487,7 @@ create unique index if not exists appointments_booking_code_unique
 
 drop function if exists public.book_appointment(text, text, timestamptz, text, text, text);
 drop function if exists public.book_appointment(text, text, timestamptz, text, text);
+drop function if exists public.book_appointment(text, text, date, text, text, text);
 
 create function public.book_appointment(
   p_full_name text,
@@ -485,6 +505,8 @@ declare
   v_patient_id bigint;
   v_appointment_id bigint;
   v_booking_code text;
+  v_local_date date := (p_appt_at at time zone 'Asia/Manila')::date;
+  v_local_time time := (p_appt_at at time zone 'Asia/Manila')::time;
 begin
   if length(trim(coalesce(p_full_name, ''))) > 100 then
     raise exception 'Full name is too long';
@@ -510,8 +532,17 @@ begin
   if length(trim(coalesce(p_phone, ''))) = 0 then
     raise exception 'Phone number is required';
   end if;
-  if p_appt_at <= now() then
+  if p_appt_at is null or p_appt_at <= now() then
     raise exception 'Appointment time must be in the future';
+  end if;
+  if not exists (
+    select 1 from public.doctor_schedule_dates d
+    where d.doctor = trim(p_doctor)
+      and d.location = trim(p_location)
+      and d.available_date = v_local_date
+      and v_local_time between d.available_from and d.available_until
+  ) then
+    raise exception 'This appointment date or time is not available';
   end if;
 
   select id into v_patient_id
@@ -531,7 +562,14 @@ begin
   end if;
 
   insert into public.appointments (patient_id, appt_at, reason, doctor, location, status)
-  values (v_patient_id, p_appt_at, trim(coalesce(p_reason, '')), 'Monique Nolasco - Pet', trim(p_location), 'Scheduled')
+  values (
+    v_patient_id,
+    p_appt_at,
+    trim(coalesce(p_reason, '')),
+    'Monique Nolasco - Pet',
+    trim(p_location),
+    'Scheduled'
+  )
   returning id into v_appointment_id;
 
   update public.appointments
@@ -564,39 +602,29 @@ $$;
 revoke all on function public.get_doctors() from public;
 grant execute on function public.get_doctors() to anon, authenticated;
 
+drop trigger if exists prevent_doctor_double_booking on public.appointments;
+drop function if exists public.prevent_doctor_double_booking();
 create or replace function public.prevent_doctor_double_booking()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_duration integer := greatest(coalesce(new.duration_minutes, 30), 15);
 begin
-  if coalesce(new.status, '') = 'Cancelled' then
-    return new;
-  end if;
-  if coalesce(trim(new.doctor), '') = '' then
-    return new;
-  end if;
-
+  if new.status in ('Cancelled', 'Done') or coalesce(trim(new.doctor), '') = '' then return new; end if;
+  perform pg_advisory_xact_lock(hashtextextended(lower(trim(new.doctor)) || '|' || extract(epoch from new.appt_at)::text, 0));
   if exists (
-    select 1
-    from public.appointments existing
+    select 1 from public.appointments existing
     where existing.id is distinct from new.id
-      and existing.status <> 'Cancelled'
-      and coalesce(existing.status, '') <> 'Done'
-      and lower(trim(coalesce(existing.doctor, ''))) = lower(trim(new.doctor))
-      and existing.appt_at < (new.appt_at + make_interval(mins => v_duration))
-      and (existing.appt_at + make_interval(mins => greatest(coalesce(existing.duration_minutes, 30), 15))) > new.appt_at
+      and existing.status not in ('Cancelled', 'Done')
+      and lower(trim(existing.doctor)) = lower(trim(new.doctor))
+      and existing.appt_at = new.appt_at
   ) then
     raise exception 'Doctor is already booked for this time slot';
   end if;
   return new;
 end;
 $$;
-
-drop trigger if exists prevent_doctor_double_booking on public.appointments;
 create trigger prevent_doctor_double_booking
   before insert or update on public.appointments
   for each row execute function public.prevent_doctor_double_booking();

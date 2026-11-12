@@ -1,14 +1,15 @@
 ﻿// Appointments: schedule visits and mark them Done or Cancelled.
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
-import { dateTime, startOfToday } from "../lib/format";
+import { appointmentDateKey, appointmentDateTime, appointmentDateTimeLocal, appointmentDateTimeTimestamp } from "../lib/format";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import DoctorScheduleManager from "../components/DoctorScheduleManager";
 
-const emptyAppointment = { patient_id: "", appt_at: "", reason: "", doctor: "Monique Nolasco - Pet", location: "", duration_minutes: 30 };
+const emptyAppointment = { patient_id: "", appt_at: "", reason: "", doctor: "Monique Nolasco - Pet", location: "" };
 
-export default function Appointments({ initialFilter = "Upcoming" }) {
+export default function Appointments({ initialFilter = "Upcoming", isAdmin = false }) {
   const [appts, setAppts] = useState([]);
   const [patients, setPatients] = useState([]);
   const [filter, setFilter] = useState(initialFilter);
@@ -20,6 +21,7 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
   const [actionType, setActionType] = useState("save");
   const [showPatientPicker, setShowPatientPicker] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
+  const [showSchedule, setShowSchedule] = useState(false);
   const pageSize = 10;
 
   async function load() {
@@ -39,7 +41,7 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
     }
     setSaving(true);
     setActionType("save");
-    const data = { ...form, appt_at: new Date(form.appt_at).toISOString() };
+    const data = { ...form, appt_at: appointmentDateTimeTimestamp(form.appt_at) };
     delete data.id;
     const { error } = form.id
       ? await supabase.from("appointments").update(data).eq("id", form.id)
@@ -86,13 +88,11 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
     setForm({ ...form, patient_id: patientId });
   }
   function openEdit(a) {
-    const date = new Date(a.appt_at);
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    setForm({ id: a.id, patient_id: a.patient_id || "", appt_at: local, reason: a.reason || "", doctor: a.doctor || "Monique Nolasco - Pet", location: a.location || "", duration_minutes: a.duration_minutes || 30 });
+    setForm({ id: a.id, patient_id: a.patient_id || "", appt_at: appointmentDateTimeLocal(a.appt_at), reason: a.reason || "", doctor: a.doctor || "Monique Nolasco - Pet", location: a.location || "" });
     setShowForm(true);
   }
 
-  const today = startOfToday();
+  const today = appointmentDateKey(new Date());
   const shown = appts.filter((a) => {
     const query = search.trim().toLowerCase();
     if (query) {
@@ -100,8 +100,9 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
       if (!matches) return false;
     }
     if (filter === "All") return true;
-    if (filter === "Today") return new Date(a.appt_at).toDateString() === today.toDateString();
-    return new Date(a.appt_at) >= today && a.status === "Scheduled";
+    const date = appointmentDateKey(a.appt_at);
+    if (filter === "Today") return date === today;
+    return date >= today && a.status === "Scheduled";
   });
   const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -112,8 +113,11 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
     <div>
       <div className="page-header">
         <h1>Appointments</h1>
+        {isAdmin && <button className="btn" type="button" onClick={() => setShowSchedule((value) => !value)}>{showSchedule ? "Hide doctor schedule" : "Manage doctor schedule"}</button>}
         <button className="btn primary" type="button" onClick={openAdd}>Add appointment</button>
       </div>
+
+      {isAdmin && showSchedule && <DoctorScheduleManager />}
 
       <Modal title={form.id ? "Edit appointment" : "New appointment"} open={showForm} onClose={() => setShowForm(false)} className="form-modal">
         <form className="form-grid" onSubmit={save}>
@@ -133,14 +137,6 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
           </label>
           <label>Date & time<input type="datetime-local" value={form.appt_at} onChange={(e) => setForm({ ...form, appt_at: e.target.value })} required /></label>
           <label>Reason<input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
-          <label>Duration
-            <select value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })}>
-              <option value={15}>15 minutes</option>
-              <option value={30}>30 minutes</option>
-              <option value={45}>45 minutes</option>
-              <option value={60}>1 hour</option>
-            </select>
-          </label>
           <label>Doctor
             <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
               <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
@@ -212,7 +208,7 @@ export default function Appointments({ initialFilter = "Upcoming" }) {
                     <td><b>{(currentPage - 1) * pageSize + index + 1}</b></td>
                     <td>{a.booking_code ? <span className="tag blue">{a.booking_code}</span> : "-"}</td>
                     <td><b>{a.patients?.full_name || "-"}</b></td>
-                    <td>{dateTime(a.appt_at)}</td>
+                    <td>{appointmentDateTime(a.appt_at)}</td>
                     <td>{a.doctor ? `Dr. ${a.doctor}` : "-"}</td>
                     <td>{a.location || "-"}</td>
                     <td>{a.reason || "-"}</td>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { supabase } from "../supabaseClient";
-import { ageFrom } from "../lib/format";
+import { ageFrom, appointmentDateTime } from "../lib/format";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
@@ -187,7 +187,7 @@ export default function Patients() {
               {timeline.map((item) => (
                 <div className="list-row" key={item.id}>
                   <span><b>{item.type}</b><br /><small>{item.detail}</small></span>
-                  <span className="muted">{new Date(item.date).toLocaleString("en-PH")}</span>
+                  <span className="muted">{item.type === "Appointment" ? appointmentDateTime(item.date) : new Date(item.date).toLocaleString("en-PH")}</span>
                 </div>
               ))}
             </div>

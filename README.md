@@ -19,13 +19,15 @@ Dashboard, POS / Cashier, Patients (with consultations), Appointments, Inventory
 
 For an existing database missing the emergency contact name field, run `supabase/emergency-contact-name.sql` in Supabase SQL Editor.
 
-### Email notifications for public appointments
-1. Run the entire updated `supabase/public-booking.sql` in Supabase SQL Editor. It also installs the secure public appointment lookup and update functions.
-2. Create a [Resend](https://resend.com) account and verify the sender domain/address you want to send appointment emails from.
-3. Deploy `supabase/functions/public-appointment` with the Supabase CLI: `npx supabase functions deploy public-appointment`.
-4. In Supabase Edge Function secrets, set `CLINIC_APP_ORIGIN` to the exact public URL of your app, `RESEND_API_KEY` to your Resend API key, `APPOINTMENT_FROM_EMAIL` to the verified sender address, and `APPOINTMENT_NOTIFICATION_EMAIL` to `marvinliban1414@gmail.com`.
-5. Push the updated frontend to GitHub so Vercel can deploy it.
-6. Submit a test booking or use **Change an existing appointment** with the Booking ID and original phone number. Only future appointments still marked Scheduled can be changed. If an appointment saves but email delivery fails, the confirmation will say so; check the Edge Function logs and Resend configuration.
+### Public appointments and doctor availability
+1. Run `supabase/public-booking.sql` in Supabase SQL Editor.
+2. Run `supabase/appointment-schedule.sql` in Supabase SQL Editor. This enables date-specific availability from 8:00 AM to 5:00 PM. Dates saved by the earlier date-only version are retained with those hours. Older weekly schedules are converted to individual available dates for the next 90 days. If the date-only migration changed existing appointments, their saved time remains 12:00 noon.
+3. Create a [Resend](https://resend.com) account and verify the sender domain/address you want to send appointment emails from.
+4. Deploy `supabase/functions/public-appointment` with the Supabase CLI: `npx supabase functions deploy public-appointment`.
+5. In Supabase Edge Function secrets, set `CLINIC_APP_ORIGIN` to the exact public URL of your app, `RESEND_API_KEY` to your Resend API key, `APPOINTMENT_FROM_EMAIL` to the verified sender address, and `APPOINTMENT_NOTIFICATION_EMAIL` to `marvinliban1414@gmail.com`.
+6. Push the updated frontend to GitHub so Vercel can deploy it.
+7. While logged in as admin, use **Appointments → Manage doctor schedule → Select dates on calendar** to check each available date, including Saturdays and Sundays. Uncheck dates and save changes to remove availability. Patients choose an available date, doctor, and any time from 8:00 AM to 5:00 PM. The same doctor cannot be booked twice at the exact same time.
+8. Submit a test booking or use **Change an existing appointment** with the Booking ID and original phone number. Only future appointments still marked Scheduled can be changed. If an appointment saves but email delivery fails, the confirmation will say so; check the Edge Function logs and Resend configuration.
 
 ## Online
 Push to GitHub, import in vercel.com, add the 2 `.env` values as Environment Variables.

@@ -93,7 +93,7 @@ export default function App() {
           {activePage === "pos" && <POS user={user} />}
           {activePage === "patients" && <Patients />}
           {activePage === "consultations" && <Clinical user={user} />}
-          {activePage === "appointments" && <Appointments initialFilter={appointmentsFilter} />}
+          {activePage === "appointments" && <Appointments initialFilter={appointmentsFilter} isAdmin={role === "admin"} />}
           {activePage === "inventory" && <Inventory />}
           {activePage === "sales" && <Sales />}
           {activePage === "staff" && <Staff />}

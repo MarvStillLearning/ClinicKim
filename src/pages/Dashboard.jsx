@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { supabase } from "../supabaseClient";
-import { peso, dateTime, startOfToday } from "../lib/format";
+import { peso, appointmentDateKey, appointmentDateBoundary, appointmentDateTime, appointmentDateLabel, nextAppointmentDateKey, startOfToday } from "../lib/format";
 import { Wallet, Users, AlertTriangle, CalendarDays } from "lucide-react";
 
 function CountUp({ value, format = (number) => String(number) }) {
@@ -41,13 +41,16 @@ export default function Dashboard({ onOpenAppointmentsToday }) {
     async function load() {
       const today = startOfToday();
       const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
-      const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+      const todayKey = appointmentDateKey(new Date());
+      const tomorrowKey = nextAppointmentDateKey(todayKey);
 
       const s = await supabase.from("sales").select("*").gte("created_at", weekAgo.toISOString()).order("created_at", { ascending: false });
       const p = await supabase.from("patients").select("id", { count: "exact", head: true });
       const l = await supabase.from("products").select("*").neq("category", "Service").lte("stock", 5).order("stock");
       const a = await supabase.from("appointments").select("*, patients(full_name)")
-        .gte("appt_at", today.toISOString()).lt("appt_at", tomorrow.toISOString()).order("appt_at");
+        .gte("appt_at", appointmentDateBoundary(todayKey))
+        .lt("appt_at", appointmentDateBoundary(tomorrowKey))
+        .order("appt_at");
       setSales(s.data || []);
       setPatientCount(p.count || 0);
       setLowStock(l.data || []);
@@ -67,11 +70,7 @@ export default function Dashboard({ onOpenAppointmentsToday }) {
   }
   const max = Math.max(...days.map((d) => d.total), 1);
   const todayTotal = days[6].total;
-  const todayLabel = new Date().toLocaleDateString("en-PH", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const todayLabel = appointmentDateLabel(new Date());
 
   return (
     <div>
@@ -147,7 +146,7 @@ export default function Dashboard({ onOpenAppointmentsToday }) {
               }}
             >
               <span><b>{a.patients?.full_name}</b><br /><small>{a.reason}</small></span>
-              <span className="muted">{new Date(a.appt_at).toLocaleTimeString("en-PH", { timeStyle: "short" })}</span>
+              <span className="muted">{appointmentDateTime(a.appt_at)}</span>
             </div>
           ))}
           <h3 style={{ marginTop: 20 }}>Low stock</h3>

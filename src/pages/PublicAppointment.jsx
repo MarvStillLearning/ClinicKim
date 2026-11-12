@@ -1,15 +1,77 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
-import { CLINIC_NAME } from "../lib/format";
+import { appointmentDateKey, appointmentDateLabel, appointmentDateTimeTimestamp, CLINIC_NAME } from "../lib/format";
 import { Stethoscope } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import Modal from "../components/Modal";
 
-function localDateTime(value) {
-  const date = new Date(value);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
+function timeLabel(value) {
+  const date = /^\d{2}:\d{2}$/.test(value) ? new Date(`1970-01-01T${value}+08:00`) : new Date(value);
+  return date.toLocaleTimeString("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  });
+}
+
+function currentManilaTime() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Manila",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = parts.find((part) => part.type === "hour")?.value || "00";
+  const minute = parts.find((part) => part.type === "minute")?.value || "00";
+  const nextMinute = new Date(Date.UTC(2000, 0, 1, Number(hour), Number(minute) + 1));
+  return `${String(nextMinute.getUTCHours()).padStart(2, "0")}:${String(nextMinute.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function AvailabilityPicker({
+  dates,
+  doctors,
+  selectedDate,
+  selectedDoctor,
+  selectedTime,
+  loading,
+  onDateChange,
+  onDoctorChange,
+  onTimeChange,
+}) {
+  const today = appointmentDateKey(new Date());
+  const minTime = selectedDate === today && currentManilaTime() > "08:00"
+    ? currentManilaTime()
+    : "08:00";
+
+  return (
+    <>
+      <label>Available date
+        <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} required>
+          <option value="">Select an available date...</option>
+          {dates.map((date) => <option key={date} value={date}>{appointmentDateLabel(`${date}T12:00:00+08:00`)}</option>)}
+        </select>
+      </label>
+      <label>Doctor
+        <select value={selectedDoctor} onChange={(event) => onDoctorChange(event.target.value)} disabled={!selectedDate || loading} required>
+          <option value="">{loading ? "Loading available doctors..." : "Select an available doctor..."}</option>
+          {doctors.map((doctor) => <option key={doctor} value={doctor}>{doctor}</option>)}
+        </select>
+      </label>
+      <label>Available time (8:00 AM–5:00 PM)
+        <input
+          type="time"
+          min={minTime}
+          max="17:00"
+          step="60"
+          value={selectedTime}
+          onChange={(event) => onTimeChange(event.target.value)}
+          disabled={!selectedDate || loading}
+          required
+        />
+      </label>
+    </>
+  );
 }
 
 async function invokeBookingFunction(body) {
@@ -37,9 +99,7 @@ export default function PublicAppointment({ onBack }) {
   const [form, setForm] = useState({
     full_name: "",
     phone: "",
-    appt_at: "",
     reason: "",
-    doctor: "Monique Nolasco - Pet",
     location: "",
   });
   const [message, setMessage] = useState("");
@@ -52,15 +112,87 @@ export default function PublicAppointment({ onBack }) {
   const [lookup, setLookup] = useState({ booking_code: "", phone: "" });
   const [existingAppointment, setExistingAppointment] = useState(null);
   const [changeForm, setChangeForm] = useState(null);
+  const [availableDates, setAvailableDates] = useState([]);
+  const [availableDoctors, setAvailableDoctors] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
+  const [datesLoading, setDatesLoading] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const availabilityLocation = mode === "create" ? form.location : changeForm?.location || "";
+
+  function dateKey(value) {
+    return appointmentDateKey(value);
+  }
+
+  useEffect(() => {
+    let active = true;
+    setAvailableDates([]);
+    setAvailableDoctors([]);
+    setSelectedDate("");
+    setSelectedDoctor("");
+    setSelectedTime("");
+    if (!availabilityLocation) {
+      setDatesLoading(false);
+      return () => { active = false; };
+    }
+
+    setDatesLoading(true);
+    supabase.rpc("get_public_appointment_dates", { p_location: availabilityLocation })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) setMessage(error.message);
+        else setAvailableDates((data || []).map((item) => item.available_date));
+        setDatesLoading(false);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setMessage(error instanceof Error ? error.message : "Unable to load available appointment dates.");
+        setDatesLoading(false);
+      });
+    return () => { active = false; };
+  }, [availabilityLocation]);
+
+  useEffect(() => {
+    let active = true;
+    setAvailableDoctors([]);
+    setSelectedDoctor("");
+    if (!selectedDate || !availabilityLocation) {
+      setAvailabilityLoading(false);
+      return () => { active = false; };
+    }
+    setAvailabilityLoading(true);
+    supabase.rpc("get_public_appointment_doctors", {
+      p_date: selectedDate,
+      p_location: availabilityLocation,
+    }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setMessage(error.message);
+      else setAvailableDoctors((data || []).map((item) => item.doctor));
+      setAvailabilityLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setMessage(error instanceof Error ? error.message : "Unable to load available doctors.");
+      setAvailabilityLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedDate, availabilityLocation]);
+
+  const selectedAppointmentAt = selectedDate && selectedTime
+    ? appointmentDateTimeTimestamp(`${selectedDate}T${selectedTime}`)
+    : "";
+  const offeredDates = [...new Set([
+    ...availableDates,
+    ...(mode === "change" && existingAppointment ? [dateKey(existingAppointment.appt_at)] : []),
+  ])].sort();
 
   async function submit(e) {
     e.preventDefault();
     setSaving(true);
     setMessage("");
 
-    const selectedTime = new Date(form.appt_at);
-    if (selectedTime <= new Date()) {
-      setMessage("Please select a future date and time.");
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime > "17:00") {
+      setMessage("Choose an available appointment date and time.");
       setSaving(false);
       return;
     }
@@ -75,7 +207,6 @@ export default function PublicAppointment({ onBack }) {
     try {
       const updating = mode === "change";
       const values = updating ? changeForm : form;
-      const selectedTime = new Date(values.appt_at);
       const data = await invokeBookingFunction({
         action: updating ? "update" : "create",
         ...(updating ? {
@@ -85,9 +216,9 @@ export default function PublicAppointment({ onBack }) {
           p_full_name: form.full_name.trim(),
           p_phone: form.phone.trim(),
         }),
-        p_appt_at: selectedTime.toISOString(),
+        p_appt_at: selectedAppointmentAt,
         p_reason: values.reason.trim(),
-        p_doctor: values.doctor.trim(),
+        p_doctor: selectedDoctor,
         p_location: values.location,
       });
       setBookingCode(data?.booking_code || "");
@@ -116,11 +247,12 @@ export default function PublicAppointment({ onBack }) {
       }
       setExistingAppointment(data);
       setChangeForm({
-        appt_at: localDateTime(data.appt_at),
         reason: data.reason || "",
-        doctor: data.doctor || "Monique Nolasco - Pet",
         location: data.location || "",
       });
+      setSelectedDate("");
+      setSelectedDoctor("");
+      setSelectedTime("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to find that appointment.");
     } finally {
@@ -130,8 +262,8 @@ export default function PublicAppointment({ onBack }) {
 
   function submitChange(e) {
     e.preventDefault();
-    if (new Date(changeForm.appt_at) <= new Date()) {
-      setMessage("Please select a future date and time.");
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime > "17:00") {
+      setMessage("Choose an available appointment date and time.");
       return;
     }
     setMessage("");
@@ -143,13 +275,15 @@ export default function PublicAppointment({ onBack }) {
     setMessage("");
     setExistingAppointment(null);
     setChangeForm(null);
+    setSelectedDate("");
+    setSelectedDoctor("");
+    setSelectedTime("");
   }
 
   const submitForm = mode === "create" ? submit : existingAppointment ? submitChange : findExistingAppointment;
   const submitLabel = mode === "create"
     ? "Submit Appointment"
     : existingAppointment ? "Review appointment changes" : "Find Booking";
-
   function confirmDetails() {
     if (mode === "create") {
       return (
@@ -157,9 +291,9 @@ export default function PublicAppointment({ onBack }) {
           <p>Please check that the patient and clinic details are correct before booking.</p>
           <h3>{form.full_name}</h3>
           <p><b>Phone:</b> {form.phone}</p>
-          <p><b>Date & Time:</b> {new Date(form.appt_at).toLocaleString()}</p>
+          <p><b>Date & time:</b> {selectedAppointmentAt ? `${appointmentDateLabel(selectedAppointmentAt)} · ${timeLabel(selectedTime)}` : "-"}</p>
           <p><b>Location:</b> {form.location}</p>
-          <p><b>Doctor:</b> {form.doctor}</p>
+          <p><b>Doctor:</b> {selectedDoctor || "-"}</p>
           <p><b>Reason:</b> {form.reason}</p>
         </>
       );
@@ -169,9 +303,9 @@ export default function PublicAppointment({ onBack }) {
       <>
         <p>Please confirm the updated appointment details.</p>
         <h3>{existingAppointment?.booking_code}</h3>
-        <p><b>Date & Time:</b> {new Date(changeForm.appt_at).toLocaleString()}</p>
+        <p><b>Date & time:</b> {selectedAppointmentAt ? `${appointmentDateLabel(selectedAppointmentAt)} · ${timeLabel(selectedTime)}` : "-"}</p>
         <p><b>Location:</b> {changeForm.location}</p>
-        <p><b>Doctor:</b> {changeForm.doctor}</p>
+        <p><b>Doctor:</b> {selectedDoctor || "-"}</p>
         <p><b>Reason:</b> {changeForm.reason}</p>
       </>
     );
@@ -214,9 +348,6 @@ export default function PublicAppointment({ onBack }) {
             <label>Phone Number
               <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
             </label>
-            <label>Date & Time
-              <input type="datetime-local" value={form.appt_at} onChange={(e) => setForm({ ...form, appt_at: e.target.value })} required />
-            </label>
             <label>Reason for Visit
               <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
             </label>
@@ -227,11 +358,22 @@ export default function PublicAppointment({ onBack }) {
                 <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
               </select>
             </label>
-            <label>Doctor
-              <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
-                <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
-              </select>
-            </label>
+            {form.location && (datesLoading
+              ? <p className="muted">Loading available dates...</p>
+              : availableDates.length === 0
+                ? <p className="muted">No appointment dates are available at this location. Please contact the clinic.</p>
+                : <AvailabilityPicker
+                    dates={availableDates}
+                    doctors={availableDoctors}
+                    selectedDate={selectedDate}
+                    selectedDoctor={selectedDoctor}
+                    selectedTime={selectedTime}
+                    loading={availabilityLoading}
+                    onDateChange={(date) => { setSelectedDate(date); setSelectedDoctor(""); setSelectedTime(""); }}
+                    onDoctorChange={setSelectedDoctor}
+                    onTimeChange={setSelectedTime}
+                  />
+            )}
             {message && <p className="error">{message}</p>}
             <button className="btn primary" type="submit" disabled={saving}>{saving ? "Submitting..." : "Submit Appointment"}</button>
             <button className="btn" type="button" onClick={() => startMode("change")}>Change an existing appointment</button>
@@ -253,14 +395,11 @@ export default function PublicAppointment({ onBack }) {
               <>
                 <div className="booking-confirmation">
                   <small className="muted">Current appointment · {existingAppointment.booking_code}</small>
-                  <p><b>Date & Time:</b> {new Date(existingAppointment.appt_at).toLocaleString()}</p>
+                  <p><b>Date & time:</b> {appointmentDateLabel(existingAppointment.appt_at)} · {timeLabel(existingAppointment.appt_at)}</p>
                   <p><b>Location:</b> {existingAppointment.location}</p>
                   <p><b>Doctor:</b> {existingAppointment.doctor}</p>
                   <p><b>Reason:</b> {existingAppointment.reason}</p>
                 </div>
-                <label>New Date & Time
-                  <input type="datetime-local" value={changeForm.appt_at} onChange={(e) => setChangeForm({ ...changeForm, appt_at: e.target.value })} required />
-                </label>
                 <label>Reason for Visit
                   <textarea maxLength={500} value={changeForm.reason} onChange={(e) => setChangeForm({ ...changeForm, reason: e.target.value })} required />
                 </label>
@@ -271,11 +410,21 @@ export default function PublicAppointment({ onBack }) {
                     <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
                   </select>
                 </label>
-                <label>Doctor
-                  <select value={changeForm.doctor} onChange={(e) => setChangeForm({ ...changeForm, doctor: e.target.value })} required>
-                    <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
-                  </select>
-                </label>
+                  {datesLoading
+                    ? <p className="muted">Loading available dates...</p>
+                    : offeredDates.length === 0
+                    ? <p className="muted">No available appointment dates at this location. Please choose another location.</p>
+                    : <AvailabilityPicker
+                        dates={offeredDates}
+                        doctors={availableDoctors}
+                        selectedDate={selectedDate}
+                        selectedDoctor={selectedDoctor}
+                        selectedTime={selectedTime}
+                        loading={availabilityLoading}
+                        onDateChange={(date) => { setSelectedDate(date); setSelectedDoctor(""); setSelectedTime(""); }}
+                        onDoctorChange={setSelectedDoctor}
+                        onTimeChange={setSelectedTime}
+                      />}
               </>
             )}
             {message && <p className="error">{message}</p>}
