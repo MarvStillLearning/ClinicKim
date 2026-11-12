@@ -1041,6 +1041,7 @@ tbody tr.clickable:hover td, tbody tr:hover td, tbody tr.selected td { backgroun
   .dashboard-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
+  .sidebar { height: 68px; }
   .app-content-shell { min-height: 100vh; }
   .app-topbar { min-height: 62px; padding: 8px 18px; }
   .app-topbar-search-wrap { width: min(340px, 55%); }
