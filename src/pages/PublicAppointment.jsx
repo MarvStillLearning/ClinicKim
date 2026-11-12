@@ -111,6 +111,9 @@ export default function PublicAppointment({ onBack }) {
         p_booking_code: lookup.booking_code.trim(),
         p_phone: lookup.phone.trim(),
       });
+      if (!data || typeof data !== "object" || typeof data.appt_at !== "string" || Number.isNaN(Date.parse(data.appt_at))) {
+        throw new Error("Could not load this appointment. Please verify the booking ID and phone number, then try again.");
+      }
       setExistingAppointment(data);
       setChangeForm({
         appt_at: localDateTime(data.appt_at),
