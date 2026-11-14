@@ -52,12 +52,24 @@ create table if not exists doctor_schedule_dates (
   location text not null check (location in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan')),
   available_date date not null,
   available_from time not null default time '08:00',
-  available_until time not null default time '16:00',
+  available_until time not null default time '17:00',
   created_at timestamptz not null default now(),
   unique (doctor, location, available_date),
   constraint doctor_schedule_dates_hours_check
-    check (available_from = time '08:00' and available_until = time '16:00')
+    check (available_from = time '08:00' and available_until = time '17:00')
 );
+
+-- Keep existing databases aligned with the 8:00 AM–5:00 PM availability shown in the app.
+alter table doctor_schedule_dates drop constraint if exists doctor_schedule_dates_hours_check;
+update doctor_schedule_dates
+set available_from = time '08:00', available_until = time '17:00'
+where available_from is distinct from time '08:00'
+   or available_until is distinct from time '17:00';
+alter table doctor_schedule_dates
+  alter column available_from set default time '08:00',
+  alter column available_until set default time '17:00',
+  add constraint doctor_schedule_dates_hours_check
+    check (available_from = time '08:00' and available_until = time '17:00');
 
 create table if not exists products (
   id bigint generated always as identity primary key,
@@ -708,10 +720,10 @@ begin
 
   v_local_date := (new.appt_at at time zone 'Asia/Manila')::date;
   v_local_time := (new.appt_at at time zone 'Asia/Manila')::time;
-  if v_local_time < time '08:00' or v_local_time >= time '16:00'
+  if v_local_time < time '08:00' or v_local_time >= time '17:00'
     or extract(minute from v_local_time) <> 0
     or extract(second from v_local_time) <> 0 then
-    raise exception 'Appointments must start on the hour between 8:00 AM and 3:00 PM';
+    raise exception 'Appointments must start on the hour between 8:00 AM and 4:00 PM';
   end if;
   if not exists (
     select 1

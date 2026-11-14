@@ -20,10 +20,10 @@ begin
 
   v_local_date := (new.appt_at at time zone 'Asia/Manila')::date;
   v_local_time := (new.appt_at at time zone 'Asia/Manila')::time;
-  if v_local_time < time '08:00' or v_local_time >= time '16:00'
+  if v_local_time < time '08:00' or v_local_time >= time '17:00'
     or extract(minute from v_local_time) <> 0
     or extract(second from v_local_time) <> 0 then
-    raise exception 'Appointments must start on the hour between 8:00 AM and 3:00 PM';
+    raise exception 'Appointments must start on the hour between 8:00 AM and 4:00 PM';
   end if;
   if not exists (
     select 1

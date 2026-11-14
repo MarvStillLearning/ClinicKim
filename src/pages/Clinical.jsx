@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ageFrom, dateTime, CLINIC_NAME } from "../lib/format";
-import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import Modal from "../components/Modal";
 
@@ -23,11 +22,9 @@ export default function Clinical({ initialPatientId = "" }) {
   const [form, setForm] = useState(emptyConsultation);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [recordPage, setRecordPage] = useState(1);
   const [consultationFormOpen, setConsultationFormOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState(null);
   const [recordsLoading, setRecordsLoading] = useState(true);
-  const pageSize = 5;
 
   async function loadPatients() {
     const { data } = await supabase.from("patients").select("*").order("full_name");
@@ -42,7 +39,6 @@ export default function Clinical({ initialPatientId = "" }) {
       .order("created_at", { ascending: false });
     if (error) setMessage(error.message);
     else setRecords(data || []);
-    setRecordPage(1);
     setRecordsLoading(false);
   }
 
@@ -118,14 +114,11 @@ export default function Clinical({ initialPatientId = "" }) {
     printed.document.close();
   }
 
-  const recordTotalPages = Math.max(1, Math.ceil(records.length / pageSize));
-  const currentRecordPage = Math.min(recordPage, recordTotalPages);
-  const pagedRecords = records.slice((currentRecordPage - 1) * pageSize, currentRecordPage * pageSize);
   const patient = patients.find((item) => String(item.id) === String(patientId));
   const set = (field) => (event) => setForm({ ...form, [field]: event.target.value });
 
   return (
-    <div>
+    <div className="consultation-page">
       <div className="page-header">
         <div>
           <h1>Consultations</h1>
@@ -151,10 +144,10 @@ export default function Clinical({ initialPatientId = "" }) {
           {recordsLoading ? <p className="muted">Loading consultations...</p> : records.length === 0 ? (
             <p className="muted">No consultations recorded yet.</p>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap consultation-table-wrap" tabIndex="0" aria-label="Consultations table; scroll horizontally or vertically to view records">
               <table>
                 <thead><tr><th>Date</th><th>Patient</th><th>Complaint</th><th>Diagnosis</th><th className="right">Action</th></tr></thead>
-                <tbody>{pagedRecords.map((record) => (
+                <tbody>{records.map((record) => (
                   <tr key={record.id}>
                     <td>{dateTime(record.created_at)}</td>
                     <td>{record.patients?.full_name || "Unknown patient"}</td>
@@ -166,7 +159,6 @@ export default function Clinical({ initialPatientId = "" }) {
               </table>
             </div>
           )}
-          {!recordsLoading && <Pagination page={recordPage} setPage={setRecordPage} totalItems={records.length} pageSize={pageSize} />}
         </div>
       </div>
 

@@ -53,7 +53,8 @@ begin
     where d.doctor = trim(p_doctor)
       and d.location = trim(p_location)
       and d.available_date = v_local_date
-      and v_local_time between d.available_from and d.available_until
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
   ) then
     raise exception 'This appointment date or time is not available';
   end if;

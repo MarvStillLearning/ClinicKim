@@ -166,7 +166,7 @@ export default function PublicAppointment({ onBack }) {
     setSaving(true);
     setMessage("");
 
-    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "16:00") {
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "17:00") {
       setMessage("Choose an available appointment date and time.");
       setSaving(false);
       return;
@@ -237,7 +237,7 @@ export default function PublicAppointment({ onBack }) {
 
   function submitChange(e) {
     e.preventDefault();
-    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "16:00") {
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "17:00") {
       setMessage("Choose an available appointment date and time.");
       return;
     }
@@ -287,9 +287,9 @@ export default function PublicAppointment({ onBack }) {
   }
 
   return (
-    <div className="public-booking">
+    <div className={`public-booking${success ? " booking-success-page" : ""}`}>
       <ThemeToggle className="public-theme-toggle" />
-      <form className="card public-booking-card" onSubmit={submitForm}>
+      <form className={`card public-booking-card${success ? " booking-success-card" : ""}`} onSubmit={submitForm}>
         <div className="public-booking-header">
           <Stethoscope size={36} color="var(--primary)" />
           <h2>{CLINIC_NAME}</h2>
@@ -298,22 +298,37 @@ export default function PublicAppointment({ onBack }) {
 
         {success ? (
           <div className="public-success">
-            <h3>{mode === "change" ? "Appointment updated" : "Appointment submitted"}</h3>
-            {bookingCode && (
-              <div className="booking-confirmation">
-                <small className="muted">Your Booking ID</small>
-                <h2>{bookingCode}</h2>
-                <p>Present or quote this ID when contacting or visiting the clinic.</p>
+            <article className="booking-receipt" aria-label="Appointment booking receipt">
+              <header className="booking-receipt-header">
+                <Stethoscope size={28} aria-hidden="true" />
+                <small>APPOINTMENT {mode === "change" ? "UPDATE" : "BOOKING"} RECEIPT</small>
+                <h2>{CLINIC_NAME}</h2>
+                <p>Keep this receipt for your records</p>
+              </header>
+              <div className="booking-receipt-code">
+                <small>BOOKING REFERENCE</small>
+                <strong>{bookingCode || "Pending"}</strong>
               </div>
-            )}
-            <p className="muted">
-              {mode === "change"
-                ? "Your appointment details have been updated. Please wait for clinic confirmation."
-                : "Your appointment is now marked as Scheduled. Please wait for clinic confirmation."}
-            </p>
-            {!notificationSent && <p className="error">Your booking was saved, but the clinic email notification could not be sent. Please contact the clinic to confirm.</p>}
-            {bookingCode && <button className="btn" type="button" onClick={() => window.print()}>Print Confirmation</button>}
-            <a className="btn primary" href="/login" onClick={(event) => handleAppLink(event, onBack)}>Back to Login</a>
+              <dl className="booking-receipt-details">
+                <div><dt>Patient</dt><dd>{mode === "change" ? (existingAppointment?.full_name || existingAppointment?.patient_name || "Registered patient") : form.full_name}</dd></div>
+                <div><dt>Phone</dt><dd>{mode === "change" ? (existingAppointment?.phone || lookup.phone) : form.phone}</dd></div>
+                <div><dt>Date</dt><dd>{selectedAppointmentAt ? appointmentDateLabel(selectedAppointmentAt) : "-"}</dd></div>
+                <div><dt>Time</dt><dd>{selectedTime ? timeLabel(selectedTime) : "-"}</dd></div>
+                <div><dt>Doctor</dt><dd>{selectedDoctor || "-"}</dd></div>
+                <div><dt>Location</dt><dd>{mode === "change" ? changeForm?.location : form.location}</dd></div>
+                <div className="booking-receipt-reason"><dt>Reason for visit</dt><dd>{mode === "change" ? changeForm?.reason : form.reason}</dd></div>
+              </dl>
+              <div className="booking-receipt-status"><span>Appointment status</span><strong>Scheduled · Awaiting clinic confirmation</strong></div>
+              <footer className="booking-receipt-footer">
+                <b>Thank you for choosing {CLINIC_NAME}</b>
+                <span>Please present your Booking ID when you contact or visit the clinic.</span>
+              </footer>
+            </article>
+            {!notificationSent && <p className="error booking-email-warning">Your booking was saved, but the clinic email notification could not be sent. Please contact the clinic to confirm.</p>}
+            <div className="booking-receipt-actions">
+              {bookingCode && <button className="btn" type="button" onClick={() => window.print()}>Print receipt</button>}
+              <a className="btn primary" href="/login" onClick={(event) => handleAppLink(event, onBack)}>Back to Login</a>
+            </div>
           </div>
         ) : mode === "create" ? (
           <>

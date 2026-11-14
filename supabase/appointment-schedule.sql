@@ -1,5 +1,5 @@
 -- Run after supabase/public-booking.sql in Supabase SQL Editor.
--- Adds exact available dates and hourly appointment capacity from 8:00 AM to 4:00 PM.
+-- Adds exact available dates and hourly appointment capacity from 8:00 AM to 5:00 PM.
 
 create table if not exists public.doctor_schedule_dates (
   id bigint generated always as identity primary key,
@@ -7,17 +7,17 @@ create table if not exists public.doctor_schedule_dates (
   location text not null check (location in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan')),
   available_date date not null,
   available_from time not null default time '08:00',
-  available_until time not null default time '16:00',
+  available_until time not null default time '17:00',
   created_at timestamptz not null default now(),
   unique (doctor, location, available_date),
   constraint doctor_schedule_dates_hours_check
-    check (available_from = time '08:00' and available_until = time '16:00')
+    check (available_from = time '08:00' and available_until = time '17:00')
 );
 
 alter table public.doctor_schedule_dates
   add column if not exists available_from time not null default time '08:00';
 alter table public.doctor_schedule_dates
-  add column if not exists available_until time not null default time '16:00';
+  add column if not exists available_until time not null default time '17:00';
 
 alter table public.doctor_schedule_dates
   drop constraint if exists doctor_schedule_dates_hours_check;
@@ -26,12 +26,12 @@ update public.doctor_schedule_dates
 set available_from = time '08:00'
 where available_from is distinct from time '08:00';
 update public.doctor_schedule_dates
-set available_until = time '16:00'
-where available_until is distinct from time '16:00';
+set available_until = time '17:00'
+where available_until is distinct from time '17:00';
 alter table public.doctor_schedule_dates
   alter column available_from set default time '08:00',
   alter column available_from set not null,
-  alter column available_until set default time '16:00',
+  alter column available_until set default time '17:00',
   alter column available_until set not null;
 
 create unique index if not exists doctor_schedule_dates_doctor_location_date_unique
@@ -43,7 +43,7 @@ alter table public.doctor_schedule_dates
   add constraint doctor_schedule_dates_hours_check
   check (
     available_from = time '08:00'
-    and available_until = time '16:00'
+    and available_until = time '17:00'
   );
 
 alter table public.doctor_schedule_dates enable row level security;
@@ -129,7 +129,7 @@ as $$
         and extract(hour from (a.appt_at at time zone 'Asia/Manila')) = extract(hour from slots.available_time)
         and a.status not in ('Cancelled', 'Done')
     )) as remaining_slots
-  from generate_series(8, 15) as slot(hour_number)
+  from generate_series(8, 16) as slot(hour_number)
   cross join lateral (
     select make_time(slot.hour_number, 0, 0) as available_time
   ) slots
@@ -344,10 +344,10 @@ begin
 
   v_local_date := (new.appt_at at time zone 'Asia/Manila')::date;
   v_local_time := (new.appt_at at time zone 'Asia/Manila')::time;
-  if v_local_time < time '08:00' or v_local_time >= time '16:00'
+  if v_local_time < time '08:00' or v_local_time >= time '17:00'
     or extract(minute from v_local_time) <> 0
     or extract(second from v_local_time) <> 0 then
-    raise exception 'Appointments must start on the hour between 8:00 AM and 3:00 PM';
+    raise exception 'Appointments must start on the hour between 8:00 AM and 4:00 PM';
   end if;
   if not exists (
     select 1
