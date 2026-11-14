@@ -22,7 +22,7 @@ begin
     select 1
     from public.profiles
     where id = auth.uid()
-      and role in ('admin', 'doctor', 'cashier')
+      and role in ('admin', 'doctor', 'nurse')
   ) then
     raise exception 'Staff access required';
   end if;

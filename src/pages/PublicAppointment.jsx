@@ -5,6 +5,7 @@ import AppointmentAvailabilityPicker from "../components/AppointmentAvailability
 import { Stethoscope } from "lucide-react";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import Modal from "../components/Modal";
+import ThemeToggle from "../components/ThemeToggle";
 
 function timeLabel(value) {
   const date = /^\d{2}:\d{2}$/.test(value) ? new Date(`1970-01-01T${value}+08:00`) : new Date(value);
@@ -287,9 +288,10 @@ export default function PublicAppointment({ onBack }) {
 
   return (
     <div className="public-booking">
+      <ThemeToggle className="public-theme-toggle" />
       <form className="card public-booking-card" onSubmit={submitForm}>
         <div className="public-booking-header">
-          <Stethoscope size={36} color="#0d9488" />
+          <Stethoscope size={36} color="var(--primary)" />
           <h2>{CLINIC_NAME}</h2>
           <p className="muted">{mode === "create" ? "Patient Appointment Booking" : "Change an Existing Appointment"}</p>
         </div>

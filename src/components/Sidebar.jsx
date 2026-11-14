@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import {
   LayoutDashboard, ShoppingCart, Users, CalendarDays, Package, Receipt,
-  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen, ShieldCheck, Menu, X
+  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen, ShieldCheck, Archive, Menu, X
 } from "lucide-react";
 import ActionLoadingDialog from "./ActionLoadingDialog";
 
@@ -16,15 +16,16 @@ const ALL_PAGES = [
   { id: "pos", label: "Medical POS", group: "PHARMACY & POS", icon: ShoppingCart },
   { id: "inventory", label: "Inventory", group: "PHARMACY & POS", icon: Package },
   { id: "sales", label: "Sales Transactions", group: "PHARMACY & POS", icon: Receipt },
-  { id: "staff", label: "Doctors & Staff", group: "ADMINISTRATION", icon: UserCog },
+  { id: "staff", label: "Staff & Roles", group: "ADMINISTRATION", icon: UserCog },
   { id: "audit", label: "Audit Log", group: "ADMINISTRATION", icon: ShieldCheck },
+  { id: "backup", label: "Data Backup", group: "ADMINISTRATION", icon: Archive },
 ];
 
 // Which pages each role can open
 const ACCESS = {
-  admin: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit"],
-  doctor: ["dashboard", "patients", "consultations", "appointments", "inventory"],
-  cashier: ["dashboard", "pos", "sales"],
+  admin: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit", "backup"],
+  doctor: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit", "backup"],
+  nurse: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales"],
 };
 
 export default function Sidebar({ page, setPage, role, email }) {
@@ -32,7 +33,7 @@ export default function Sidebar({ page, setPage, role, email }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
   const [loggingOut, setLoggingOut] = useState(false);
-  const visiblePages = ALL_PAGES.filter((item) => ACCESS[role].includes(item.id));
+  const visiblePages = ALL_PAGES.filter((item) => ACCESS[role]?.includes(item.id));
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";

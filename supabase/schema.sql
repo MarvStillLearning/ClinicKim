@@ -5,7 +5,7 @@ create table if not exists profiles (
   id uuid primary key references auth.users on delete cascade,
   full_name text,
   email text,
-  role text not null default 'cashier'
+  role text not null default 'nurse'
 );
 alter table profiles add column if not exists email text;
 
@@ -213,7 +213,7 @@ end $$;
 drop policy if exists "profiles read" on public.profiles;
 drop policy if exists "profiles self read" on public.profiles;
 create policy "profiles self read" on public.profiles for select to authenticated
-  using (id = auth.uid() or public.current_user_role() = 'admin');
+  using (id = auth.uid() or public.current_user_role() in ('admin', 'doctor'));
 drop policy if exists "profiles no client write" on public.profiles;
 create policy "profiles no client write" on public.profiles for all to authenticated
   using (false) with check (false);
@@ -223,19 +223,19 @@ drop policy if exists "patients staff insert" on public.patients;
 drop policy if exists "patients staff update" on public.patients;
 drop policy if exists "patients staff delete" on public.patients;
 create policy "patients staff read" on public.patients for select to authenticated
-  using (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "patients staff insert" on public.patients for insert to authenticated
-  with check (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "patients staff update" on public.patients for update to authenticated
-  using (public.current_user_role() in ('admin', 'doctor', 'cashier'))
-  with check (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'))
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "patients staff delete" on public.patients for delete to authenticated
-  using (public.current_user_role() = 'admin');
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 
 drop policy if exists "records clinical" on public.records;
 create policy "records clinical" on public.records for all to authenticated
-  using (public.current_user_role() in ('admin', 'doctor'))
-  with check (public.current_user_role() in ('admin', 'doctor'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'))
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 
 drop policy if exists "appointments staff" on public.appointments;
 drop policy if exists "appointments staff read" on public.appointments;
@@ -243,50 +243,50 @@ drop policy if exists "appointments staff write" on public.appointments;
 drop policy if exists "appointments staff update" on public.appointments;
 drop policy if exists "appointments admin delete" on public.appointments;
 create policy "appointments staff read" on public.appointments for select to authenticated
-  using (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "appointments staff write" on public.appointments for insert to authenticated
-  with check (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "appointments staff update" on public.appointments for update to authenticated
-  using (public.current_user_role() in ('admin', 'doctor', 'cashier'))
-  with check (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'))
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "appointments admin delete" on public.appointments for delete to authenticated
-  using (public.current_user_role() = 'admin');
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 
 grant select, insert, delete on public.doctor_schedule_dates to authenticated;
 grant usage, select on sequence public.doctor_schedule_dates_id_seq to authenticated;
 drop policy if exists "doctor schedule dates admin manage" on public.doctor_schedule_dates;
 create policy "doctor schedule dates admin manage" on public.doctor_schedule_dates for all to authenticated
-  using (public.current_user_role() = 'admin')
-  with check (public.current_user_role() = 'admin');
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'))
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 
 drop policy if exists "products staff read" on public.products;
 drop policy if exists "products admin write" on public.products;
 create policy "products staff read" on public.products for select to authenticated
-  using (public.current_user_role() in ('admin', 'doctor', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "products admin write" on public.products for all to authenticated
-  using (public.current_user_role() = 'admin')
-  with check (public.current_user_role() = 'admin');
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'))
+  with check (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 
 drop policy if exists "sales staff read" on public.sales;
 drop policy if exists "sales no direct write" on public.sales;
 create policy "sales staff read" on public.sales for select to authenticated
-  using (public.current_user_role() in ('admin', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "sales no direct write" on public.sales for all to authenticated
   using (false) with check (false);
 
 drop policy if exists "sale items staff read" on public.sale_items;
 drop policy if exists "sale items no direct write" on public.sale_items;
 create policy "sale items staff read" on public.sale_items for select to authenticated
-  using (public.current_user_role() in ('admin', 'cashier'));
+  using (public.current_user_role() in ('admin', 'doctor', 'nurse'));
 create policy "sale items no direct write" on public.sale_items for all to authenticated
   using (false) with check (false);
 
--- Audit trail: admin can review, application users cannot read or modify audit entries.
+-- Audit trail: doctors and system admins can review, application users cannot modify audit entries.
 alter table public.audit_logs enable row level security;
 grant select on public.audit_logs to authenticated;
 drop policy if exists "audit admin read" on public.audit_logs;
 create policy "audit admin read" on public.audit_logs for select to authenticated
-  using (public.current_user_role() = 'admin');
+  using (public.current_user_role() in ('admin', 'doctor'));
 drop policy if exists "audit no client write" on public.audit_logs;
 create policy "audit no client write" on public.audit_logs for all to authenticated
   using (false) with check (false);
@@ -300,6 +300,11 @@ as $$
 declare
   v_record_id text;
 begin
+  if current_setting('app.import_clinic_backup', true) = 'true'
+    and public.current_user_role() = 'admin' then
+    return coalesce(new, old);
+  end if;
+
   if tg_op = 'DELETE' then
     v_record_id := coalesce(to_jsonb(old)->>'id', '');
   else
@@ -384,7 +389,7 @@ declare
 begin
   if auth.uid() is null then raise exception 'Authentication required'; end if;
   v_role := public.current_user_role();
-  if v_role not in ('admin', 'cashier') then raise exception 'Cashier access required'; end if;
+  if v_role not in ('admin', 'doctor', 'nurse') then raise exception 'Staff access required'; end if;
   if p_cart is null or jsonb_typeof(p_cart) <> 'array' or jsonb_array_length(p_cart) = 0 then
     raise exception 'Cart is empty';
   end if;
@@ -473,7 +478,9 @@ revoke all on function public.checkout_sale(bigint, jsonb, numeric, numeric, tex
 grant execute on function public.checkout_sale(bigint, jsonb, numeric, numeric, text) to authenticated;
 
 alter table public.profiles drop constraint if exists profiles_role_check;
-alter table public.profiles add constraint profiles_role_check check (role in ('admin', 'doctor', 'cashier'));
+update public.profiles set role = 'nurse' where role = 'cashier';
+alter table public.profiles alter column role set default 'nurse';
+alter table public.profiles add constraint profiles_role_check check (role in ('admin', 'doctor', 'nurse'));
 
 -- Public patient appointment booking
 alter table public.appointments add column if not exists booking_code text;
@@ -606,7 +613,7 @@ begin
     select 1
     from public.profiles
     where id = auth.uid()
-      and role in ('admin', 'doctor', 'cashier')
+      and role in ('admin', 'doctor', 'nurse')
   ) then
     raise exception 'Staff access required';
   end if;
@@ -692,6 +699,8 @@ declare
   v_local_date date;
   v_local_time time;
 begin
+  if current_setting('app.import_clinic_backup', true) = 'true'
+    and public.current_user_role() = 'admin' then return new; end if;
   if new.status in ('Cancelled', 'Done') or coalesce(trim(new.doctor), '') = '' then return new; end if;
   if new.appt_at <= now() then
     raise exception 'Appointment time must be in the future';
@@ -736,5 +745,114 @@ $$;
 create trigger prevent_doctor_double_booking
   before insert or update on public.appointments
   for each row execute function public.prevent_doctor_double_booking();
+
+-- Admin-only, transactional import for JSON backups created by the application.
+create or replace function public.import_clinic_backup(p_backup jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_table text;
+  v_row jsonb;
+  v_rows jsonb;
+  v_update_columns text;
+  v_row_count integer;
+  v_table_count integer;
+  v_max_id bigint;
+  v_sequence text;
+  v_counts jsonb := '{}'::jsonb;
+begin
+  if auth.uid() is null or public.current_user_role() <> 'admin' then
+    raise exception 'Admin access required to import backups';
+  end if;
+  if p_backup->>'format' is distinct from 'clinic-system-backup'
+    or p_backup->>'version' is distinct from '1'
+    or jsonb_typeof(p_backup->'tables') <> 'object' then
+    raise exception 'Unsupported clinic backup file';
+  end if;
+
+  perform set_config('app.import_clinic_backup', 'true', true);
+  foreach v_table in array array[
+    'profiles', 'patients', 'products', 'doctor_schedule_dates',
+    'appointments', 'records', 'sales', 'sale_items', 'audit_logs'
+  ] loop
+    v_rows := p_backup->'tables'->v_table;
+    if v_rows is null then
+      raise exception 'Backup is missing table data for %', v_table;
+    end if;
+    if jsonb_typeof(v_rows) <> 'array' then
+      raise exception 'Backup data for % must be an array', v_table;
+    end if;
+
+    v_table_count := 0;
+    for v_row in select value from jsonb_array_elements(v_rows)
+    loop
+      if jsonb_typeof(v_row) <> 'object' then
+        raise exception 'Backup row in % must be an object', v_table;
+      end if;
+
+      if v_table = 'profiles' then
+        -- Preserve system-admin roles and never allow an import to create a new admin.
+        if v_row->>'id' is null then
+          raise exception 'Profile backup row is missing its ID';
+        end if;
+        if v_row->>'role' in ('doctor', 'nurse')
+          and exists (select 1 from auth.users where id = (v_row->>'id')::uuid) then
+          insert into public.profiles (id, full_name, email, role)
+          values ((v_row->>'id')::uuid, v_row->>'full_name', v_row->>'email', v_row->>'role')
+          on conflict (id) do update
+            set full_name = excluded.full_name,
+                email = excluded.email,
+                role = excluded.role
+            where profiles.role <> 'admin';
+          get diagnostics v_row_count = row_count;
+          v_table_count := v_table_count + v_row_count;
+        end if;
+      else
+        if v_table = 'sales' and v_row->>'cashier_id' is not null
+          and not exists (select 1 from auth.users where id = (v_row->>'cashier_id')::uuid) then
+          v_row := jsonb_set(v_row, '{cashier_id}', 'null'::jsonb);
+        elsif v_table = 'audit_logs' and v_row->>'actor_id' is not null
+          and not exists (select 1 from auth.users where id = (v_row->>'actor_id')::uuid) then
+          v_row := jsonb_set(v_row, '{actor_id}', 'null'::jsonb);
+        end if;
+
+        select string_agg(format('%I = EXCLUDED.%I', column_name, column_name), ', ' order by ordinal_position)
+          into v_update_columns
+          from information_schema.columns
+          where table_schema = 'public' and table_name = v_table and column_name <> 'id';
+
+        if v_update_columns is null then
+          raise exception 'Backup table % is not supported', v_table;
+        end if;
+        execute format(
+          'insert into public.%I overriding system value select * from jsonb_populate_record(null::public.%I, $1) on conflict (id) do update set %s',
+          v_table, v_table, v_update_columns
+        ) using v_row;
+        get diagnostics v_row_count = row_count;
+        v_table_count := v_table_count + v_row_count;
+      end if;
+    end loop;
+    v_counts := v_counts || jsonb_build_object(v_table, v_table_count);
+  end loop;
+
+  -- Keep identity sequences ahead of IDs restored from the file.
+  foreach v_table in array array['patients', 'records', 'appointments', 'doctor_schedule_dates', 'products', 'sales', 'sale_items', 'audit_logs'] loop
+    v_sequence := pg_get_serial_sequence(format('public.%I', v_table), 'id');
+    if v_sequence is not null then
+      execute format('select coalesce(max(id), 0) from public.%I', v_table) into v_max_id;
+      perform setval(v_sequence::regclass, greatest(v_max_id, 1), v_max_id > 0);
+    end if;
+  end loop;
+
+  insert into public.audit_logs (actor_id, action, table_name, record_id)
+  values (auth.uid(), 'IMPORT', 'backup', p_backup->>'created_at');
+  return jsonb_build_object('rows', v_counts, 'audit_recorded', true);
+end;
+$$;
+revoke all on function public.import_clinic_backup(jsonb) from public;
+grant execute on function public.import_clinic_backup(jsonb) to authenticated;
 
 notify pgrst, 'reload schema';

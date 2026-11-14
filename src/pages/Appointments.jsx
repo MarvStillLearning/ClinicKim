@@ -5,13 +5,12 @@ import { appointmentDateKey, appointmentDateTime, appointmentDateTimeLocal, appo
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
-import DoctorScheduleManager from "../components/DoctorScheduleManager";
 import AppointmentAvailabilityPicker from "../components/AppointmentAvailabilityPicker";
 import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 const emptyAppointment = { patient_id: "", appt_at: "", reason: "", doctor: "Monique Nolasco - Pet", location: "" };
 
-export default function Appointments({ initialFilter = "Upcoming", isAdmin = false }) {
+export default function Appointments({ initialFilter = "Upcoming", canManageSchedule = false, onManageSchedule }) {
   const [appts, setAppts] = useState([]);
   const [patients, setPatients] = useState([]);
   const [filter, setFilter] = useState(initialFilter);
@@ -23,7 +22,6 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   const [actionType, setActionType] = useState("save");
   const [showPatientPicker, setShowPatientPicker] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
-  const [showSchedule, setShowSchedule] = useState(false);
   const [availableDates, setAvailableDates] = useState([]);
   const [availableDoctors, setAvailableDoctors] = useState([]);
   const [availableTimes, setAvailableTimes] = useState([]);
@@ -33,10 +31,10 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   const [datesLoading, setDatesLoading] = useState(false);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
-  const pageSize = 10;
+  const pageSize = 5;
 
   async function load() {
-    const a = await supabase.from("appointments").select("*, patients(full_name)").order("appt_at");
+    const a = await supabase.from("appointments").select("*, patients(full_name, phone)").order("appt_at");
     const p = await supabase.from("patients").select("*").order("full_name");
     setAppts(a.data || []);
     setPatients(p.data || []);
@@ -232,11 +230,9 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
     <div>
       <div className="page-header">
         <h1>Appointments</h1>
-        {isAdmin && <button className="btn" type="button" onClick={() => setShowSchedule((value) => !value)}>{showSchedule ? "Hide doctor schedule" : "Manage doctor schedule"}</button>}
+        {canManageSchedule && <button className="btn" type="button" onClick={onManageSchedule}>Manage doctor schedule</button>}
         <button className="btn primary" type="button" onClick={openAdd}>Add appointment</button>
       </div>
-
-      {isAdmin && showSchedule && <DoctorScheduleManager />}
 
       <Modal title={form.id ? "Edit appointment" : "New appointment"} open={showForm} onClose={() => setShowForm(false)} className="form-modal">
         <form className="form-grid" onSubmit={save}>
@@ -354,26 +350,31 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
         {shown.length === 0 && <p className="muted">No appointments.</p>}
         {shown.length > 0 && (
           <div className="table-wrap">
-            <table>
-              <thead><tr><th>#</th><th>Booking ID</th><th>Patient</th><th>Date & time</th><th>Doctor</th><th>Location</th><th>Reason</th><th>Status</th><th className="right">Actions</th></tr></thead>
+            <table className="appointments-table">
+              <thead><tr><th>#</th><th>Booking ID</th><th>Patient / phone</th><th>Date & time</th><th>Doctor</th><th>Location</th><th>Reason</th><th>Status</th><th className="right">Actions</th></tr></thead>
               <tbody>
                 {pagedShown.map((a, index) => (
                   <tr key={a.id}>
                     <td><b>{(currentPage - 1) * pageSize + index + 1}</b></td>
                     <td>{a.booking_code ? <span className="tag blue">{a.booking_code}</span> : "-"}</td>
-                    <td><b>{a.patients?.full_name || "-"}</b></td>
+                    <td>
+                      <b>{a.patients?.full_name || "-"}</b>
+                      <small className="appointment-patient-phone">{a.patients?.phone || "No phone recorded"}</small>
+                    </td>
                     <td>{appointmentDateTime(a.appt_at)}</td>
                     <td>{a.doctor ? `Dr. ${a.doctor}` : "-"}</td>
                     <td>{a.location || "-"}</td>
                     <td>{a.reason || "-"}</td>
                     <td><span className={"tag " + (a.status === "Done" ? "green" : a.status === "Cancelled" ? "red" : "blue")}>{a.status}</span></td>
                     <td className="right">
+                      <div className="appointment-actions">
                       {a.status === "Scheduled" && <>
-                        <button className="btn small" type="button" onClick={() => setStatus(a.id, "Done")}>Done</button>{" "}
-                        <button className="btn small" type="button" onClick={() => setStatus(a.id, "Cancelled")}>Cancel</button>{" "}
+                        <button className="btn small" type="button" onClick={() => setStatus(a.id, "Done")}>Done</button>
+                        <button className="btn small" type="button" onClick={() => setStatus(a.id, "Cancelled")}>Cancel</button>
                       </>}
-                      <button className="btn small" type="button" onClick={() => openEdit(a)}>Edit</button>{" "}
+                      <button className="btn small" type="button" onClick={() => openEdit(a)}>Edit</button>
                       <button className="btn small danger" type="button" onClick={() => remove(a)}>Delete</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

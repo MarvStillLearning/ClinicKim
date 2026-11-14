@@ -36,7 +36,7 @@ function calendarDays(month) {
   });
 }
 
-export default function DoctorScheduleManager() {
+export default function DoctorScheduleManager({ onBack }) {
   const [availableDates, setAvailableDates] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [selectedDates, setSelectedDates] = useState([]);
@@ -155,27 +155,29 @@ export default function DoctorScheduleManager() {
     <section className="card">
       <div className="page-header">
         <div>
-          <h2>Doctor availability</h2>
+          <h1>Manage doctor schedule</h1>
           <p className="muted">Select available dates on the calendar. The doctor is available from 8:00 AM to 5:00 PM.</p>
         </div>
+        {onBack && <button className="btn" type="button" onClick={onBack}>Back to appointments</button>}
       </div>
       {message && <p className="error">{message}</p>}
 
-      <div className="form-grid">
-        <label>Doctor
+      <div className="schedule-setup">
+        <label className="schedule-field">Doctor
           <input maxLength={100} value={form.doctor} onChange={(event) => setForm({ ...form, doctor: event.target.value })} required />
         </label>
-        <label>Location
+        <label className="schedule-field">Clinic location
           <select value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })}>
             {LOCATIONS.map((location) => <option key={location}>{location}</option>)}
           </select>
         </label>
-        <div>
-          <p className="muted">Available hours: <b>8:00 AM – 5:00 PM</b></p>
-          <button className="btn primary" type="button" onClick={openCalendar}>
-            Select dates on calendar
-          </button>
+        <div className="schedule-hours">
+          <span className="schedule-hours-label">Standard hours</span>
+          <strong>8:00 AM – 5:00 PM</strong>
         </div>
+        <button className="btn primary schedule-manage-btn" type="button" onClick={openCalendar}>
+          Manage available dates
+        </button>
       </div>
 
       {loading ? <p className="muted">Loading doctor availability...</p> : availableDates.length === 0 ? (

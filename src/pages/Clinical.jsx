@@ -25,8 +25,9 @@ export default function Clinical({ initialPatientId = "" }) {
   const [message, setMessage] = useState("");
   const [recordPage, setRecordPage] = useState(1);
   const [consultationFormOpen, setConsultationFormOpen] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState(null);
   const [recordsLoading, setRecordsLoading] = useState(true);
-  const pageSize = 10;
+  const pageSize = 5;
 
   async function loadPatients() {
     const { data } = await supabase.from("patients").select("*").order("full_name");
@@ -149,26 +150,48 @@ export default function Clinical({ initialPatientId = "" }) {
           <h3>All consultations</h3>
           {recordsLoading ? <p className="muted">Loading consultations...</p> : records.length === 0 ? (
             <p className="muted">No consultations recorded yet.</p>
-          ) : pagedRecords.map((record) => (
-            <div className="consultation-record" key={record.id}>
-              <div className="consultation-record-header">
-                <span><b>{record.patients?.full_name || "Unknown patient"}</b> | {dateTime(record.created_at)}</span>
-                <button className="btn small" type="button" onClick={() => printPrescription(record)}>
-                  <Printer size={14} /> Print Rx
-                </button>
-              </div>
-              <div className="consultation-record-grid">
-                <div><small>Complaint</small><p>{record.complaint || "-"}</p></div>
-                <div><small>Vitals</small><p>BP: {record.bp || "-"} · Temp: {record.temperature || "-"} · Weight: {record.weight || "-"} kg</p></div>
-                <div><small>Diagnosis</small><p>{record.diagnosis || "-"}</p></div>
-                <div><small>Prescription</small><p>{record.treatment || "-"}</p></div>
-              </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Patient</th><th>Complaint</th><th>Diagnosis</th><th className="right">Action</th></tr></thead>
+                <tbody>{pagedRecords.map((record) => (
+                  <tr key={record.id}>
+                    <td>{dateTime(record.created_at)}</td>
+                    <td>{record.patients?.full_name || "Unknown patient"}</td>
+                    <td>{record.complaint || "-"}</td>
+                    <td>{record.diagnosis || "-"}</td>
+                    <td className="right"><button className="btn small" type="button" onClick={() => setViewingRecord(record)}>View more</button></td>
+                  </tr>
+                ))}</tbody>
+              </table>
             </div>
-          ))}
+          )}
           {!recordsLoading && <Pagination page={recordPage} setPage={setRecordPage} totalItems={records.length} pageSize={pageSize} />}
         </div>
       </div>
 
+      <Modal
+        title="Consultation details"
+        open={Boolean(viewingRecord)}
+        onClose={() => setViewingRecord(null)}
+        className="form-modal consultation-details-modal"
+      >
+        {viewingRecord && (
+          <div className="consultation-details">
+            <p><small>Patient</small><strong>{viewingRecord.patients?.full_name || "Unknown patient"}</strong></p>
+            <p><small>Date</small><strong>{dateTime(viewingRecord.created_at)}</strong></p>
+            <p><small>Chief complaint</small><span>{viewingRecord.complaint || "-"}</span></p>
+            <p><small>Vitals</small><span>BP: {viewingRecord.bp || "-"} · Temp: {viewingRecord.temperature || "-"} °C · Weight: {viewingRecord.weight || "-"} kg</span></p>
+            <p><small>Diagnosis</small><span>{viewingRecord.diagnosis || "-"}</span></p>
+            <p><small>Treatment / prescription</small><span>{viewingRecord.treatment || "-"}</span></p>
+            <p><small>Doctor's notes</small><span>{viewingRecord.notes || "-"}</span></p>
+            <div className="modal-actions">
+              <button className="btn" type="button" onClick={() => setViewingRecord(null)}>Close</button>
+              <button className="btn primary" type="button" onClick={() => printPrescription(viewingRecord)}><Printer size={15} /> Print Rx</button>
+            </div>
+          </div>
+        )}
+      </Modal>
       <Modal
         title="New consultation"
         open={consultationFormOpen}

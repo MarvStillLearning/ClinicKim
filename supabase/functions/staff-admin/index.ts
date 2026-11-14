@@ -64,8 +64,8 @@ Deno.serve(async (req) => {
       .select("role")
       .eq("id", userData.user.id)
       .maybeSingle();
-    if (profileError || profile?.role !== "admin") {
-      return json(req, 403, { error: "Admin access required" });
+    if (profileError || !["admin", "doctor"].includes(profile?.role || "")) {
+      return json(req, 403, { error: "Doctor or admin access required" });
     }
 
     const body = await req.json();
@@ -82,9 +82,10 @@ Deno.serve(async (req) => {
       if (!fullName || !email || !role || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return json(req, 400, { error: "Valid name, email, and role are required" });
       }
-      if (!["admin", "doctor", "cashier"].includes(role)) {
+      if (!["doctor", "nurse"].includes(role)) {
         return json(req, 400, { error: "Invalid role" });
       }
+      body.role = role;
       if (action === "create" && (typeof body.password !== "string" || body.password.length < 12)) {
         return json(req, 400, { error: "Password must contain at least 12 characters" });
       }
@@ -103,6 +104,16 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    if (action === "update" || action === "delete") {
+      const { data: targetProfile, error: targetError } = await admin
+        .from("profiles")
+        .select("role")
+        .eq("id", body.id)
+        .maybeSingle();
+      if (targetError || !targetProfile) return json(req, 404, { error: "Staff account not found" });
+      if (targetProfile.role === "admin") return json(req, 403, { error: "System admin accounts cannot be changed here" });
+    }
+
     if (action === "create") {
       const { data, error } = await admin.auth.admin.createUser({
         email: body.email.trim(),
@@ -119,7 +130,7 @@ Deno.serve(async (req) => {
       });
       if (profileError) return json(req, 500, { error: "Account created but profile update failed" });
     } else if (action === "update") {
-      if (!body.id || body.id === userData.user.id && body.role !== "admin") {
+      if (!body.id || body.id === userData.user.id && body.role !== profile.role) {
         return json(req, 400, { error: "Invalid account update" });
       }
       const attributes: Record<string, unknown> = {

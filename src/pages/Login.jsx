@@ -4,6 +4,8 @@ import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import { Stethoscope } from "lucide-react";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import PasswordInput from "../components/PasswordInput";
+import ThemeToggle from "../components/ThemeToggle";
 
 function handleAppLink(event, navigate) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -28,12 +30,13 @@ export default function Login({ onBookAppointment, onViewPrices }) {
 
   return (
     <div className="login-bg">
+      <ThemeToggle className="login-theme-toggle" />
       <form className="card login" onSubmit={handleLogin}>
         <div className="login-brand"><span className="brand-mark"><Stethoscope size={21} /></span></div>
         <h2>{CLINIC_NAME}</h2>
         <p className="muted">Clinic Management System</p>
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <PasswordInput placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <button className="btn primary" type="submit" disabled={loggingIn}>{loggingIn ? "Logging in..." : "Log in"}</button>
         <a className="btn" href="/book-appointment" onClick={(event) => handleAppLink(event, onBookAppointment)}>Book an Appointment</a>
         <a className="btn" href="/prices" onClick={(event) => handleAppLink(event, onViewPrices)}>View Medicines & Services</a>

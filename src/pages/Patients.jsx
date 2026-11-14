@@ -20,6 +20,7 @@ const emptyPatient = {
 export default function Patients() {
   const [patients, setPatients] = useState([]);
   const [timeline, setTimeline] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -28,7 +29,7 @@ export default function Patients() {
   const [actionType, setActionType] = useState("save");
   const [message, setMessage] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 5;
 
   async function loadPatients() {
     const { data } = await supabase.from("patients").select("*").order("full_name");
@@ -40,6 +41,7 @@ export default function Patients() {
   async function loadTimeline(patient) {
     setSelected(patient);
     setTimeline([]);
+    setTimelineLoading(true);
     const [appointmentsResult, recordsResult, salesResult] = await Promise.all([
       supabase.from("appointments").select("id, appt_at, reason, doctor, status").eq("patient_id", patient.id).order("appt_at", { ascending: false }),
       supabase.from("records").select("id, created_at, complaint, diagnosis, treatment").eq("patient_id", patient.id).order("created_at", { ascending: false }),
@@ -51,6 +53,7 @@ export default function Patients() {
       ...(salesResult.data || []).map((item) => ({ id: `sale-${item.id}`, date: item.created_at, type: "Payment", detail: `${item.payment_method || "Payment"} · ₱${Number(item.total).toLocaleString("en-PH", { minimumFractionDigits: 2 })}` })),
     ].sort((a, b) => new Date(b.date) - new Date(a.date));
     setTimeline(items);
+    setTimelineLoading(false);
   }
 
   async function viewPatient(patient) {
@@ -168,7 +171,10 @@ export default function Patients() {
         {selected && (
           <>
             <div className="patient-profile-details">
-              <h3>{selected.full_name}</h3>
+              <div className="patient-profile-heading">
+                <h3>{selected.full_name}</h3>
+                <span className="patient-profile-badge">Patient profile</span>
+              </div>
               <div><small>Sex</small><span>{selected.sex || "Not recorded"}</span></div>
               <div><small>Birthdate / age</small><span>{selected.birthdate ? `${selected.birthdate} · ${ageFrom(selected.birthdate)} years` : "Not recorded"}</span></div>
               <div><small>Phone</small><span>{selected.phone || "Not recorded"}</span></div>
@@ -177,14 +183,18 @@ export default function Patients() {
               <div><small>Emergency contact phone</small><span>{selected.emergency_contact || "Not recorded"}</span></div>
             </div>
             <h3 className="patient-profile-timeline-title">Patient timeline</h3>
-            {timeline.length === 0 ? <p className="muted">No appointments, consultations, or payments yet.</p> : (
+            {timelineLoading ? <p className="muted">Loading patient timeline...</p> : timeline.length === 0 ? <p className="muted">No appointments, consultations, or payments yet.</p> : (
               <div className="patient-profile-timeline">
-                {timeline.map((item) => (
-                  <div className="list-row" key={item.id}>
-                    <span><b>{item.type}</b><br /><small>{item.detail}</small></span>
-                    <span className="muted">{item.type === "Appointment" ? appointmentDateTime(item.date) : new Date(item.date).toLocaleString("en-PH")}</span>
-                  </div>
-                ))}
+                <table>
+                  <thead><tr><th>Type</th><th>Details</th><th>Date and time</th></tr></thead>
+                  <tbody>{timeline.map((item) => (
+                    <tr key={item.id}>
+                      <td><span className={`tag ${item.type === "Appointment" ? "blue" : item.type === "Consultation" ? "green" : ""}`}>{item.type}</span></td>
+                      <td>{item.detail}</td>
+                      <td>{item.type === "Appointment" ? appointmentDateTime(item.date) : new Date(item.date).toLocaleString("en-PH")}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
               </div>
             )}
           </>

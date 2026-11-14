@@ -20,7 +20,7 @@ export default function Inventory({ initialLowStockOnly = false }) {
   const [page, setPage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [actionType, setActionType] = useState("save");
-  const pageSize = 10;
+  const pageSize = 5;
 
   async function load() {
     const { data } = await supabase.from("products").select("*").in("category", CATEGORIES).order("name");

@@ -4,6 +4,7 @@ import { peso, CLINIC_NAME } from "../lib/format";
 import { ArrowLeft, Stethoscope } from "lucide-react";
 import Pagination from "../components/Pagination";
 import DebouncedSearchInput from "../components/DebouncedSearchInput";
+import ThemeToggle from "../components/ThemeToggle";
 
 function handleAppLink(event, navigate) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -62,6 +63,7 @@ export default function PublicPrices({ onBack }) {
             <div><h1>{CLINIC_NAME}</h1><p className="muted">Medicine & Service Prices</p></div>
           </div>
           <div className="public-header-actions">
+            <ThemeToggle />
             <a className="btn" href="/login" onClick={(event) => handleAppLink(event, onBack)}><ArrowLeft size={16} /> Back to Login</a>
           </div>
         </header>

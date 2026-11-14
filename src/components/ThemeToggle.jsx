@@ -1,23 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
-export default function ThemeToggle({ className = "" }) {
-  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
+function storedTheme() {
+  const saved = window.localStorage.getItem("clinic-theme");
+  return saved ? saved === "dark" : document.documentElement.dataset.theme === "dark";
+}
 
-  function toggleTheme() {
-    const nextDark = !dark;
-    document.documentElement.dataset.theme = nextDark ? "dark" : "light";
-    localStorage.setItem("clinic-theme", nextDark ? "dark" : "light");
-    setDark(nextDark);
-  }
+export default function ThemeToggle({ className = "" }) {
+  const [dark, setDark] = useState(storedTheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    window.localStorage.setItem("clinic-theme", dark ? "dark" : "light");
+  }, [dark]);
 
   return (
     <button
-      className={`theme-toggle ${className}`}
+      className={`theme-toggle${className ? ` ${className}` : ""}`}
       type="button"
-      aria-label={dark ? "Use light mode" : "Use dark mode"}
-      title={dark ? "Use light mode" : "Use dark mode"}
-      onClick={toggleTheme}
+      title={dark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      aria-pressed={dark}
+      onClick={() => setDark((current) => !current)}
     >
       {dark ? <Sun size={18} /> : <Moon size={18} />}
     </button>

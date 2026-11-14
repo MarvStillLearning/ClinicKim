@@ -3,17 +3,18 @@ import { supabase } from "../supabaseClient";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Staff() {
   const [staff, setStaff] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", role: "cashier" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", role: "nurse" });
   const [saving, setSaving] = useState(false);
   const [actionType, setActionType] = useState("save");
   const [message, setMessage] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 5;
 
   async function getFunctionErrorMessage(error, fallback) {
     if (error.context instanceof Response) {
@@ -33,7 +34,7 @@ export default function Staff() {
 
   function openAdd() {
     setEditing(null);
-    setForm({ full_name: "", email: "", password: "", role: "cashier" });
+    setForm({ full_name: "", email: "", password: "", role: "nurse" });
     setMessage("");
     setShowForm(true);
   }
@@ -44,7 +45,7 @@ export default function Staff() {
       full_name: member.full_name || "",
       email: member.email || "",
       password: "",
-      role: member.role || "cashier",
+      role: member.role === "doctor" ? "doctor" : "nurse",
     });
     setMessage("");
     setShowForm(true);
@@ -129,10 +130,12 @@ export default function Staff() {
                   <td><b>{(currentPage - 1) * pageSize + index + 1}</b></td>
                   <td><b>{member.full_name || "Unnamed staff"}</b></td>
                   <td>{member.email || "-"}</td>
-                  <td><span className={`tag ${member.role === "admin" ? "red" : member.role === "doctor" ? "blue" : "green"}`}>{member.role}</span></td>
+                  <td><span className={`tag ${member.role === "admin" ? "red" : member.role === "doctor" ? "blue" : "green"}`}>{member.role === "admin" ? "System admin" : member.role}</span></td>
                   <td className="right">
-                    <button className="btn small" type="button" onClick={() => openEdit(member)}>Edit</button>{" "}
-                    <button className="btn small danger" type="button" disabled={saving} onClick={() => deleteUser(member)}>Delete</button>
+                    {member.role !== "admin" && <>
+                      <button className="btn small" type="button" onClick={() => openEdit(member)}>Edit</button>{" "}
+                      <button className="btn small danger" type="button" disabled={saving} onClick={() => deleteUser(member)}>Delete</button>
+                    </>}
                   </td>
                 </tr>
               ))}
@@ -147,8 +150,8 @@ export default function Staff() {
           <form className="staff-modal-form" onSubmit={saveUser}>
             <label>Full Name<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} required /></label>
             <label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
-            <label>{editing ? "New Password (leave blank to keep)" : "Password"}<input type="password" minLength={12} autoComplete={editing ? "new-password" : "new-password"} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editing} /></label>
-            <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="doctor">Doctor</option><option value="cashier">Cashier</option></select></label>
+            <label>{editing ? "New Password (leave blank to keep)" : "Password"}<PasswordInput minLength={12} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!editing} /></label>
+            <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="doctor">Doctor</option><option value="nurse">Nurse</option></select></label>
             <div className="modal-actions"><button className="btn" type="button" onClick={() => setShowForm(false)}>Cancel</button><button className="btn primary" type="submit" disabled={saving}>{saving ? "Saving..." : "Save"}</button></div>
           </form>
         </Modal>

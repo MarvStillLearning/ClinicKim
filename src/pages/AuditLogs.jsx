@@ -10,7 +10,7 @@ export default function AuditLogs() {
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 5;
 
   useEffect(() => {
     async function loadLogs() {

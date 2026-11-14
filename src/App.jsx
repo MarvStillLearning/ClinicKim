@@ -8,10 +8,12 @@ import POS from "./pages/POS.jsx";
 import Patients from "./pages/Patients.jsx";
 import Clinical from "./pages/Clinical.jsx";
 import Appointments from "./pages/Appointments.jsx";
+import DoctorScheduleManager from "./components/DoctorScheduleManager.jsx";
 import Inventory from "./pages/Inventory.jsx";
 import Sales from "./pages/Sales.jsx";
 import Staff from "./pages/Staff.jsx";
 import AuditLogs from "./pages/AuditLogs.jsx";
+import Backup from "./pages/Backup.jsx";
 import PublicAppointment from "./pages/PublicAppointment.jsx";
 import PublicPrices from "./pages/PublicPrices.jsx";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -22,10 +24,12 @@ const PAGE_IDS = new Set([
   "patients",
   "consultations",
   "appointments",
+  "doctor-schedule",
   "inventory",
   "sales",
   "staff",
   "audit",
+  "backup",
 ]);
 
 function pageFromPathname(pathname) {
@@ -48,7 +52,7 @@ function pathForPublicPage(publicPage) {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState("cashier"); // admin, doctor, or cashier
+  const [role, setRole] = useState("nurse"); // admin, doctor, or nurse
   const [roleLoaded, setRoleLoaded] = useState(false);
   const [page, setPage] = useState(() => pageFromPathname(window.location.pathname));
   const [appointmentsFilter, setAppointmentsFilter] = useState("Upcoming");
@@ -68,19 +72,36 @@ export default function App() {
       "patients",
       "consultations",
       "appointments",
+      "doctor-schedule",
       "inventory",
       "sales",
       "staff",
       "audit",
+      "backup",
     ],
     doctor: [
       "dashboard",
+      "pos",
       "patients",
       "consultations",
       "appointments",
+      "doctor-schedule",
       "inventory",
+      "sales",
+      "staff",
+      "audit",
+      "backup",
     ],
-    cashier: ["dashboard", "pos", "sales"],
+    nurse: [
+      "dashboard",
+      "pos",
+      "patients",
+      "consultations",
+      "appointments",
+      "doctor-schedule",
+      "inventory",
+      "sales",
+    ],
   };
 
   // Clear page-specific filters when opening a page from the menu.
@@ -136,7 +157,7 @@ export default function App() {
     }
     supabase.from("profiles").select("role").eq("id", user.id).single()
       .then(({ data }) => {
-        setRole(data?.role || "cashier");
+        setRole(data?.role || "nurse");
         setRoleLoaded(true);
       });
   }, [user]);
@@ -220,13 +241,8 @@ export default function App() {
                   navigateToPage("consultations");
                 }}
                 onOpenLowStock={() => {
-                  if (role === "cashier") {
-                    navigateToPage("pos");
-                    setPosLowStockOnly(true);
-                  } else {
-                    navigateToPage("inventory");
-                    setInventoryLowStockOnly(true);
-                  }
+                  navigateToPage("inventory");
+                  setInventoryLowStockOnly(true);
                 }}
               />
             )}
@@ -243,8 +259,12 @@ export default function App() {
             {activePage === "appointments" && (
               <Appointments
                 initialFilter={appointmentsFilter}
-                isAdmin={role === "admin"}
+                canManageSchedule={role === "admin" || role === "doctor" || role === "nurse"}
+                onManageSchedule={() => navigateToPage("doctor-schedule")}
               />
+            )}
+            {activePage === "doctor-schedule" && ["admin", "doctor", "nurse"].includes(role) && (
+              <DoctorScheduleManager onBack={() => navigateToPage("appointments")} />
             )}
             {activePage === "inventory" && (
               <Inventory initialLowStockOnly={inventoryLowStockOnly} />
@@ -252,6 +272,7 @@ export default function App() {
             {activePage === "sales" && <Sales initialFilter={salesFilter} />}
             {activePage === "staff" && <Staff />}
             {activePage === "audit" && <AuditLogs />}
+            {activePage === "backup" && <Backup role={role} />}
           </motion.main>
         </AnimatePresence>
       </div>

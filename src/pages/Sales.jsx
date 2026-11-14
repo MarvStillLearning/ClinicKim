@@ -12,7 +12,7 @@ export default function Sales({ initialFilter = "Today" }) {
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const pageSize = 10;
+  const pageSize = 5;
 
   useEffect(() => {
     let active = true;

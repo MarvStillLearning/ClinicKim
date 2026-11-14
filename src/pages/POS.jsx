@@ -188,9 +188,9 @@ export default function POS({ user, initialLowStockOnly = false }) {
 
   return (
     <div>
-      <h1>POS / Cashier</h1>
-      <div className="pos-layout pos-layout-empty">
-        <div className="card">
+      <div className="page-header"><h1>POS / Cashier</h1></div>
+      <div className="pos-layout">
+        <section className="card pos-sale-card">
           <div className="pos-sale-header">
             <h3>Current sale</h3>
             <button className="btn primary" type="button" onClick={() => setCatalogOpen(true)}>
@@ -208,7 +208,7 @@ export default function POS({ user, initialLowStockOnly = false }) {
             {selectedPatient && <button type="button" className="btn small" onClick={() => setPatientId("")}>Clear patient</button>}
           </div>
 
-          {cart.length === 0 && <p className="muted">No items added to this sale yet.</p>}
+          {cart.length === 0 && <div className="pos-empty-cart"><span className="pos-empty-icon"><Plus size={18} /></span><div><b>No items yet</b><small>Add medicine or services to begin this sale.</small></div></div>}
           {pagedCart.map((c) => (
             <div key={c.id} className="cart-line">
               <span>{c.name}<br /><small className="muted">{peso(c.price)}</small></span>
@@ -221,7 +221,9 @@ export default function POS({ user, initialLowStockOnly = false }) {
             </div>
           ))}
           <Pagination page={cartPage} setPage={setCartPage} totalItems={cart.length} pageSize={pageSize} />
-
+        </section>
+        <aside className="card pos-checkout-card">
+          <div className="pos-checkout-heading"><div><small>PAYMENT SUMMARY</small><h3>Checkout</h3></div><span className="pos-item-count">{cart.reduce((sum, item) => sum + item.qty, 0)} items</span></div>
           <hr />
           <div className="cart-line"><span>Subtotal</span><span>{peso(subtotal)}</span></div>
           <label className="cart-line">Discount (₱)<input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} style={{ width: 110 }} /></label>
@@ -240,17 +242,17 @@ export default function POS({ user, initialLowStockOnly = false }) {
               </button>
             ))}
           </div>
-          <input type="number" placeholder="Amount paid" value={paid} onChange={(e) => setPaid(e.target.value)} />
-          <div className="chips">
+          <label className="pos-paid-field">Amount paid<input type="number" placeholder="Enter amount received" value={paid} onChange={(e) => setPaid(e.target.value)} /></label>
+          <div className="chips pos-quick-amounts">
             <button type="button" className="chip" onClick={() => setPaid(total)}>Exact</button>
             {[100, 500, 1000].map((n) => <button type="button" key={n} className="chip" onClick={() => setPaid(n)}>₱{n}</button>)}
           </div>
-          <div className="cart-line"><span>Change</span><b>{paid && change >= 0 ? peso(change) : peso(0)}</b></div>
+          <div className="pos-change-line"><span>Change</span><b>{paid && change >= 0 ? peso(change) : peso(0)}</b></div>
           <button className="btn pay" onClick={checkout} disabled={saving}>
             {saving ? "Processing..." : "Pay & Save Sale"}
           </button>
           <ActionLoadingDialog open={saving} title="Processing sale" description="Validating stock and recording payment..." />
-        </div>
+        </aside>
       </div>
       <Modal title={lowStockOnly ? "Low stock items" : "Add items to sale"} open={catalogOpen} onClose={() => setCatalogOpen(false)} className="pos-catalog-modal">
         <div className="toolbar">
