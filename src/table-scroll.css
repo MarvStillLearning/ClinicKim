@@ -1,0 +1,32 @@
+/* Keep operational data tables inside a bounded two-axis scroll area. */
+.table-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.table-wrap table {
+  width: 100%;
+  min-width: 680px;
+}
+
+.table-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-raised);
+}
+
+@media (max-width: 640px) {
+  .table-wrap {
+    width: 100%;
+    max-height: 62dvh;
+    margin: 0;
+  }
+}

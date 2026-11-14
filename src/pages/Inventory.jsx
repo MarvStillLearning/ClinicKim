@@ -135,6 +135,7 @@ export default function Inventory({ initialLowStockOnly = false }) {
           <div className="search"><Search size={16} /><input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
         </div>
         {shown.length === 0 && <p className="muted">No inventory items match these filters.</p>}
+        <div className="table-wrap">
         <table>
           <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Stock</th><th>Expiry</th><th></th></tr></thead>
           <tbody>
@@ -153,6 +154,7 @@ export default function Inventory({ initialLowStockOnly = false }) {
             ))}
           </tbody>
         </table>
+        </div>
         <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />
       </div>
       <ActionLoadingDialog

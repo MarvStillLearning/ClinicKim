@@ -63,6 +63,7 @@ export default function AuditLogs() {
         </div>
         {message && <p className="error">{message}</p>}
         {loading ? <p className="muted">Loading audit trail...</p> : shown.length === 0 ? <p className="muted">No audit entries found.</p> : (
+          <div className="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Date & time</th><th>User</th><th>Action</th><th>Table</th><th>Record ID</th></tr></thead>
             <tbody>
@@ -78,6 +79,7 @@ export default function AuditLogs() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />
       </div>

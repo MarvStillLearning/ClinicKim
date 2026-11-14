@@ -114,7 +114,7 @@ export default function Sales({ initialFilter = "Today" }) {
             <button className="btn" type="button" onClick={exportCsv}>Export CSV</button>
           </div>
         </div>
-        {loading ? <p className="muted">Loading sales...</p> : shown.length === 0 ? <p className="muted">No sales found for this period.</p> : <table>
+        {loading ? <p className="muted">Loading sales...</p> : shown.length === 0 ? <p className="muted">No sales found for this period.</p> : <div className="table-wrap"><table>
           <thead><tr><th>#</th><th>Date</th><th>Patient</th><th>Method</th><th>Total</th></tr></thead>
           <tbody>
             {pagedShown.map((s, index) => (
@@ -132,7 +132,7 @@ export default function Sales({ initialFilter = "Today" }) {
               </>
             ))}
           </tbody>
-        </table>}
+        </table></div>}
         {!loading && <Pagination page={page} setPage={setPage} totalItems={shown.length} pageSize={pageSize} />}
       </div>
     </div>
