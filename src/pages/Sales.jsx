@@ -63,6 +63,16 @@ export default function Sales({ initialFilter = "Today" }) {
   const totalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pagedShown = shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  function getTotalLabel() {
+    if (selectedDate) return `Sales on ${selectedDate}`;
+    if (filter === "All") return "Total (up to 1,000)";
+    if (filter === "Today") return "Today's sales";
+    return `${filter} sales`;
+  }
+
+  const totalLabel = getTotalLabel();
+
   useEffect(() => { setPage(1); }, [filter, selectedDate]);
 
   function exportCsv() {
@@ -92,8 +102,18 @@ export default function Sales({ initialFilter = "Today" }) {
     <div>
       <h1>Sales History</h1>
       <div className="stats">
-        <div className="stat"><div><small>{selectedDate ? `Sales on ${selectedDate}` : filter === "All" ? "Total (up to 1,000)" : filter === "Today" ? "Today's sales" : `${filter} sales`}</small><h2>{peso(sum)}</h2></div></div>
-        <div className="stat"><div><small>Transactions</small><h2>{shown.length}</h2></div></div>
+        <div className="stat">
+          <div>
+            <small>{totalLabel}</small>
+            <h2>{peso(sum)}</h2>
+          </div>
+        </div>
+        <div className="stat">
+          <div>
+            <small>Transactions</small>
+            <h2>{shown.length}</h2>
+          </div>
+        </div>
       </div>
       <div className="card">
         <div className="toolbar">
@@ -110,8 +130,18 @@ export default function Sales({ initialFilter = "Today" }) {
             ))}
           </div>
           <div className="sales-history-actions">
-            <label className="sales-date-filter">Specific date<input type="date" value={selectedDate} max={today} onChange={(event) => setSelectedDate(event.target.value)} /></label>
-            <button className="btn" type="button" onClick={exportCsv}>Export CSV</button>
+            <label className="sales-date-filter">
+              Specific date
+              <input
+                type="date"
+                value={selectedDate}
+                max={today}
+                onChange={(event) => setSelectedDate(event.target.value)}
+              />
+            </label>
+            <button className="btn" type="button" onClick={exportCsv}>
+              Export CSV
+            </button>
           </div>
         </div>
         {loading ? <p className="muted">Loading sales...</p> : shown.length === 0 ? <p className="muted">No sales found for this period.</p> : <div className="table-wrap"><table>
@@ -120,14 +150,29 @@ export default function Sales({ initialFilter = "Today" }) {
             {pagedShown.map((s, index) => (
               <>
                 <tr key={s.id} className="clickable" onClick={() => toggle(s.id)}>
-                  <td>{(currentPage - 1) * pageSize + index + 1}</td><td>{dateTime(s.created_at)}</td><td>{s.patients?.full_name || "Walk-in"}</td>
-                  <td>{s.payment_method}</td><td><b>{peso(s.total)}</b></td>
+                  <td>{(currentPage - 1) * pageSize + index + 1}</td>
+                  <td>{dateTime(s.created_at)}</td>
+                  <td>{s.patients?.full_name || "Walk-in"}</td>
+                  <td>{s.payment_method}</td>
+                  <td>
+                    <b>{peso(s.total)}</b>
+                  </td>
                 </tr>
                 {openId === s.id && (
-                  <tr key={s.id + "x"}><td colSpan="5" className="detail">
-                    {items.map((i) => <div key={i.id}>{i.name} x{i.qty} - {peso(i.price * i.qty)}</div>)}
-                    {Number(s.discount) > 0 && <div className="muted">Discount: {peso(s.discount)}</div>}
-                  </td></tr>
+                  <tr key={s.id + "x"}>
+                    <td colSpan="5" className="detail">
+                      {items.map((item) => (
+                        <div key={item.id}>
+                          {item.name} x{item.qty} - {peso(item.price * item.qty)}
+                        </div>
+                      ))}
+                      {Number(s.discount) > 0 && (
+                        <div className="muted">
+                          Discount: {peso(s.discount)}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
                 )}
               </>
             ))}

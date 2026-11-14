@@ -1,11 +1,28 @@
 // Cashier: pick items, add discount, take payment, give change, print receipt.
-import { useState, useEffect } from "react";
+import { memo, useCallback, useMemo, useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { peso, dateTime, CLINIC_NAME } from "../lib/format";
-import { Search, Plus, Minus, Trash2 } from "lucide-react";
+import { Plus, Minus, Trash2, Stethoscope, Printer } from "lucide-react";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import Modal from "../components/Modal";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
+
+const tracksStock = (item) => item.category !== "Service";
+
+const POSProductCard = memo(function POSProductCard({ product, selected, onToggle }) {
+  const outOfStock = tracksStock(product) && product.stock < 1;
+  return (
+    <label className={`item pos-catalog-item${selected ? " selected" : ""}${outOfStock ? " disabled" : ""}`}>
+      <input type="checkbox" checked={selected} disabled={outOfStock} onChange={() => onToggle(product)} />
+      <span className="pos-catalog-item-details">
+        <b>{product.name}</b>
+        <span className="price">{peso(product.price)}</span>
+        <small>{selected ? "Selected" : tracksStock(product) ? (outOfStock ? "Out of stock" : `${product.stock} in stock`) : "Service"}</small>
+      </span>
+    </label>
+  );
+});
 
 export default function POS({ user, initialLowStockOnly = false }) {
   const [products, setProducts] = useState([]);
@@ -23,27 +40,24 @@ export default function POS({ user, initialLowStockOnly = false }) {
   const [cartPage, setCartPage] = useState(1);
   const [catalogOpen, setCatalogOpen] = useState(initialLowStockOnly);
   const [lowStockOnly, setLowStockOnly] = useState(initialLowStockOnly);
+  const [patientPickerOpen, setPatientPickerOpen] = useState(false);
+  const [patientSearch, setPatientSearch] = useState("");
   const pageSize = 10;
 
   async function loadData() {
     const p = await supabase.from("products").select("*").in("category", ["Medicine", "Service"]).order("name");
-    const pt = await supabase.from("patients").select("id, full_name").order("full_name");
+    const pt = await supabase.from("patients").select("id, full_name, phone, address").order("full_name");
     setProducts(p.data || []);
     setPatients(pt.data || []);
   }
   useEffect(() => { loadData(); }, []);
 
-  const tracksStock = (item) => item.category !== "Service"; // services have no stock
-
-  function toggleProductSelection(product) {
-    const found = cart.find((c) => c.id === product.id);
-    if (found) {
-      setCart(cart.filter((item) => item.id !== product.id));
-      return;
-    }
+  const toggleProductSelection = useCallback((product) => {
     if (tracksStock(product) && product.stock < 1) return;
-    setCart([...cart, { ...product, qty: 1 }]);
-  }
+    setCart((current) => current.some((item) => item.id === product.id)
+      ? current.filter((item) => item.id !== product.id)
+      : [...current, { ...product, qty: 1 }]);
+  }, []);
   function changeQty(item, amount) {
     const newQty = item.qty + amount;
     if (newQty < 1) return setCart(cart.filter((c) => c.id !== item.id));
@@ -94,10 +108,10 @@ export default function POS({ user, initialLowStockOnly = false }) {
     loadData();
   }
 
-  const shown = products.filter((p) =>
+  const shown = useMemo(() => products.filter((p) =>
     (cat === "All" || p.category === cat)
     && (!lowStockOnly || (p.category !== "Service" && Number(p.stock) <= 5))
-    && p.name.toLowerCase().includes(search.toLowerCase()));
+    && p.name.toLowerCase().includes(search.toLowerCase())), [products, cat, lowStockOnly, search]);
   const productTotalPages = Math.max(1, Math.ceil(shown.length / pageSize));
   const currentProductPage = Math.min(productPage, productTotalPages);
   const pagedProducts = shown.slice((currentProductPage - 1) * pageSize, currentProductPage * pageSize);
@@ -105,27 +119,69 @@ export default function POS({ user, initialLowStockOnly = false }) {
   const cartTotalPages = Math.max(1, Math.ceil(cart.length / pageSize));
   const currentCartPage = Math.min(cartPage, cartTotalPages);
   const pagedCart = cart.slice((currentCartPage - 1) * pageSize, currentCartPage * pageSize);
+  const selectedPatient = patients.find((patient) => String(patient.id) === String(patientId));
+  const matchingPatients = useMemo(() => patients.filter((patient) =>
+    [patient.full_name, patient.phone, patient.address]
+      .some((value) => String(value || "").toLowerCase().includes(patientSearch.trim().toLowerCase()))
+  ), [patients, patientSearch]);
   useEffect(() => { setCartPage(1); }, [cart.length]);
 
   if (receipt) {
     return (
-      <div className="card receipt">
-        <h3 style={{ textAlign: "center" }}>{CLINIC_NAME}</h3>
-        <p className="muted" style={{ textAlign: "center" }}>Official Receipt #{receipt.id}<br />{dateTime(receipt.date)}</p>
-        {receipt.patient && <p>Patient: <b>{receipt.patient}</b></p>}
-        <hr />
-        {receipt.items.map((i) => (
-          <div key={i.id} className="cart-line"><span>{i.name} x{i.qty}</span><span>{peso(i.price * i.qty)}</span></div>
-        ))}
-        <hr />
-        <div className="cart-line"><span>Subtotal</span><span>{peso(receipt.subtotal)}</span></div>
-        {receipt.disc > 0 && <div className="cart-line"><span>Discount</span><span>-{peso(receipt.disc)}</span></div>}
-        <div className="cart-line"><b>Total</b><b>{peso(receipt.total)}</b></div>
-        <div className="cart-line"><span>Paid ({receipt.method})</span><span>{peso(receipt.paid)}</span></div>
-        <div className="cart-line"><b>Change</b><b>{peso(receipt.change)}</b></div>
-        <p className="muted" style={{ textAlign: "center" }}>Thank you!</p>
-        <button className="btn" onClick={() => window.print()}>Print</button>{" "}
-        <button className="btn primary" onClick={() => setReceipt(null)}>New sale</button>
+      <div className="receipt-page">
+        <article className="card receipt">
+          <header className="receipt-header">
+            <div className="receipt-mark"><Stethoscope size={21} aria-hidden="true" /></div>
+            <p className="receipt-eyebrow">OFFICIAL RECEIPT</p>
+            <h1>{CLINIC_NAME}</h1>
+            <p>Clinic payment receipt</p>
+          </header>
+
+          <section className="receipt-metadata" aria-label="Receipt information">
+            <div><small>Receipt no.</small><strong>OR-{String(receipt.id).padStart(6, "0")}</strong></div>
+            <div><small>Date issued</small><strong>{dateTime(receipt.date)}</strong></div>
+          </section>
+
+          <section className="receipt-patient">
+            <small>RECEIVED FROM</small>
+            <strong>{receipt.patient || "Walk-in patient"}</strong>
+          </section>
+
+          <table className="receipt-items">
+            <thead><tr><th>Item / service</th><th>Qty</th><th>Amount</th></tr></thead>
+            <tbody>
+              {receipt.items.map((item) => (
+                <tr key={item.id}>
+                  <td><b>{item.name}</b><small>{peso(item.price)} each</small></td>
+                  <td>{item.qty}</td>
+                  <td>{peso(item.price * item.qty)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <section className="receipt-totals" aria-label="Payment totals">
+            <div><span>Subtotal</span><b>{peso(receipt.subtotal)}</b></div>
+            {receipt.disc > 0 && <div><span>Discount</span><b>-{peso(receipt.disc)}</b></div>}
+            <div className="receipt-grand-total"><span>Total paid</span><strong>{peso(receipt.total)}</strong></div>
+          </section>
+
+          <section className="receipt-payment" aria-label="Payment details">
+            <div><span>Payment method</span><b>{receipt.method}</b></div>
+            <div><span>Amount received</span><b>{peso(receipt.paid)}</b></div>
+            <div><span>Change</span><b>{peso(receipt.change)}</b></div>
+          </section>
+
+          <footer className="receipt-footer">
+            <strong>Thank you for choosing {CLINIC_NAME}.</strong>
+            <span>Please keep this receipt for your records.</span>
+          </footer>
+
+          <div className="receipt-actions">
+            <button className="btn" type="button" onClick={() => window.print()}><Printer size={16} /> Print receipt</button>
+            <button className="btn primary" type="button" onClick={() => setReceipt(null)}><Plus size={16} /> New sale</button>
+          </div>
+        </article>
       </div>
     );
   }
@@ -141,10 +197,16 @@ export default function POS({ user, initialLowStockOnly = false }) {
               <Plus size={16} /> Add items
             </button>
           </div>
-          <select value={patientId} onChange={(e) => setPatientId(e.target.value)}>
-            <option value="">Walk-in customer</option>
-            {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <div className="pos-patient-select">
+            <label>Patient</label>
+            <button type="button" className="btn" onClick={() => {
+              setPatientSearch("");
+              setPatientPickerOpen(true);
+            }}>
+              {selectedPatient ? `${selectedPatient.full_name}${selectedPatient.phone ? ` | ${selectedPatient.phone}` : ""}` : "Walk-in customer - Select patient"}
+            </button>
+            {selectedPatient && <button type="button" className="btn small" onClick={() => setPatientId("")}>Clear patient</button>}
+          </div>
 
           {cart.length === 0 && <p className="muted">No items added to this sale yet.</p>}
           {pagedCart.map((c) => (
@@ -198,34 +260,58 @@ export default function POS({ user, initialLowStockOnly = false }) {
             ))}
             <button type="button" className={lowStockOnly ? "chip active" : "chip"} onClick={() => setLowStockOnly(true)}>Low stock</button>
           </div>
-          <div className="search"><Search size={16} /><input placeholder="Search item..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <DebouncedSearchInput placeholder="Search item..." onSearch={setSearch} />
         </div>
         <div className="grid pos-catalog-grid">
-          {pagedProducts.map((p) => {
-            const out = tracksStock(p) && p.stock < 1;
-            const selected = cart.some((item) => item.id === p.id);
-            return (
-              <label key={p.id} className={`item pos-catalog-item${selected ? " selected" : ""}${out ? " disabled" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  disabled={out}
-                  onChange={() => toggleProductSelection(p)}
-                />
-                <span className="pos-catalog-item-details">
-                  <b>{p.name}</b>
-                  <span className="price">{peso(p.price)}</span>
-                  <small>{selected ? "Selected" : tracksStock(p) ? (out ? "Out of stock" : p.stock + " in stock") : "Service"}</small>
-                </span>
-              </label>
-            );
-          })}
+          {pagedProducts.map((product) => (
+            <POSProductCard
+              key={product.id}
+              product={product}
+              selected={cart.some((item) => item.id === product.id)}
+              onToggle={toggleProductSelection}
+          />
+          ))}
         </div>
         {shown.length === 0
           ? <p className="muted">No products or services found.</p>
           : <Pagination page={productPage} setPage={setProductPage} totalItems={shown.length} pageSize={pageSize} />}
         <div className="modal-actions">
           <button type="button" className="btn primary" onClick={() => setCatalogOpen(false)}>Done</button>
+        </div>
+      </Modal>
+      <Modal title="Select patient" open={patientPickerOpen} onClose={() => setPatientPickerOpen(false)} className="staff-modal">
+        <div className="patient-picker">
+          <DebouncedSearchInput
+            className="search patient-picker-search-wrap"
+            placeholder="Search name, phone, or address..."
+            onSearch={setPatientSearch}
+            resetKey={patientPickerOpen}
+            inputProps={{ autoFocus: true }}
+          />
+          <div className="patient-picker-list">
+            <button type="button" className="patient-picker-item" onClick={() => {
+              setPatientId("");
+              setPatientPickerOpen(false);
+            }}>
+              <strong>Walk-in customer</strong>
+              <span>Sale without a patient profile</span>
+            </button>
+            {matchingPatients.map((patient) => (
+              <button
+                key={patient.id}
+                type="button"
+                className="patient-picker-item"
+                onClick={() => {
+                  setPatientId(String(patient.id));
+                  setPatientPickerOpen(false);
+                }}
+              >
+                <strong>{patient.full_name}</strong>
+                <span>{patient.phone || "No phone"} | {patient.address || "No address recorded"}</span>
+              </button>
+            ))}
+            {matchingPatients.length === 0 && <p className="muted">No matching patients found.</p>}
+          </div>
         </div>
       </Modal>
     </div>

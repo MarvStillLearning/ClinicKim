@@ -15,6 +15,15 @@ export default function Staff() {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
+  async function getFunctionErrorMessage(error, fallback) {
+    if (error.context instanceof Response) {
+      const body = await error.context.clone().json().catch(() => null);
+      if (typeof body?.error === "string") return body.error;
+    }
+
+    return error.message || fallback;
+  }
+
   async function load() {
     const { data, error } = await supabase.from("profiles").select("*").order("full_name");
     if (error) setMessage(error.message);
@@ -55,10 +64,11 @@ export default function Staff() {
 
     const { error } = await supabase.functions.invoke("staff-admin", { body });
     if (error) {
-      if (error.message?.includes("Failed to send a request")) {
-        setMessage('Staff account service is not available. Deploy the "staff-admin" Supabase Edge Function, then try again.');
+      const errorMessage = await getFunctionErrorMessage(error, "Unable to save staff account.");
+      if (errorMessage.includes("Failed to send a request")) {
+        setMessage('Staff account service is not available. Deploy the "staff-admin" function and verify that the CLINIC_APP_ORIGIN secret matches this site.');
       } else {
-        setMessage(error.message || "Unable to save staff account.");
+        setMessage(errorMessage);
       }
     }
     else {
@@ -73,18 +83,27 @@ export default function Staff() {
     setSaving(true);
     setActionType("delete");
     setMessage("");
-    const { error } = await supabase.functions.invoke("staff-admin", {
-      body: { action: "delete", id: member.id },
-    });
-    if (error) {
-      if (error.message?.includes("Failed to send a request")) {
-        setMessage('Staff account service is not available. Deploy the "staff-admin" Supabase Edge Function, then try again.');
+
+    try {
+      const { error } = await supabase.functions.invoke("staff-admin", {
+        body: { action: "delete", id: member.id },
+      });
+
+      if (error) {
+        const errorMessage = await getFunctionErrorMessage(error, "Unable to delete staff account.");
+        if (/failed to send a request|failed to fetch|networkerror/i.test(errorMessage)) {
+          setMessage('Staff account service is not available. Deploy the "staff-admin" function and verify that the CLINIC_APP_ORIGIN secret matches this site.');
+        } else {
+          setMessage(errorMessage);
+        }
       } else {
-        setMessage(error.message || "Unable to delete staff account.");
+        await load();
       }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete staff account.");
+    } finally {
+      setSaving(false);
     }
-    else await load();
-    setSaving(false);
   }
 
   const totalPages = Math.max(1, Math.ceil(staff.length / pageSize));
@@ -99,7 +118,7 @@ export default function Staff() {
           <span className="muted">Manage staff accounts and access roles.</span>
           <button className="btn primary" type="button" onClick={openAdd}>Add Staff</button>
         </div>
-        {message && <p className="error">{message}</p>}
+        {message && <p className="error" role="alert">{message}</p>}
         {staff.length === 0 && <p className="muted">No staff found.</p>}
         <div className="table-wrap">
           <table>
@@ -139,6 +158,7 @@ export default function Staff() {
         title={actionType === "delete" ? "Deleting staff account" : editing ? "Saving staff changes" : "Creating staff account"}
         description={actionType === "delete" ? "Removing account access and profile data..." : "Updating staff information and permissions..."}
         danger={actionType === "delete"}
+
       />
     </div>
   );

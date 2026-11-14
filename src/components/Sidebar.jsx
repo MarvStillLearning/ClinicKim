@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient";
 import { CLINIC_NAME } from "../lib/format";
 import {
   LayoutDashboard, ShoppingCart, Users, CalendarDays, Package, Receipt,
-  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen, ShieldCheck
+  UserCog, LogOut, Stethoscope, Moon, Sun, PanelLeftClose, PanelLeftOpen, ShieldCheck, Menu, X
 } from "lucide-react";
 import ActionLoadingDialog from "./ActionLoadingDialog";
 
@@ -29,19 +29,19 @@ const ACCESS = {
 
 export default function Sidebar({ page, setPage, role, email }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem("clinic-theme") === "dark");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === "dark");
   const [loggingOut, setLoggingOut] = useState(false);
   const visiblePages = ALL_PAGES.filter((item) => ACCESS[role].includes(item.id));
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    localStorage.setItem("clinic-theme", dark ? "dark" : "light");
   }, [dark]);
 
   return (
     <>
     <motion.aside
-      className={`sidebar${collapsed ? " collapsed" : ""}`}
+      className={`sidebar${collapsed ? " collapsed" : ""}${mobileMenuOpen ? " mobile-open" : ""}`}
       animate={{ width: collapsed ? 84 : 248 }}
       transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
     >
@@ -57,8 +57,21 @@ export default function Sidebar({ page, setPage, role, email }) {
         >
           {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
+        <button
+          className="mobile-menu-toggle"
+          type="button"
+          aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="primary-navigation"
+          onClick={() => {
+            setCollapsed(false);
+            setMobileMenuOpen((open) => !open);
+          }}
+        >
+          {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
+        </button>
       </div>
-      <nav>
+      <nav id="primary-navigation">
         {["OVERVIEW", "CLINICAL", "PHARMACY & POS", "ADMINISTRATION"].map((group) => {
           const items = visiblePages.filter((item) => item.group === group);
           if (!items.length) return null;
@@ -66,17 +79,15 @@ export default function Sidebar({ page, setPage, role, email }) {
             <div className="nav-group" key={group}>
               {!collapsed && <div className="nav-section-label">{group}</div>}
               {items.map((item) => (
-                <motion.a
+                <motion.button
                   key={item.id}
-                  href={`/${item.id}`}
+                  type="button"
                   title={item.label}
                   aria-label={item.label}
-                  aria-current={page === item.id ? "page" : undefined}
                   className={page === item.id ? "nav active" : "nav"}
-                  onClick={(event) => {
-                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                    event.preventDefault();
+                  onClick={() => {
                     setPage(item.id);
+                    setMobileMenuOpen(false);
                   }}
                   whileHover={{ x: collapsed ? 0 : 2 }}
                   whileTap={{ scale: 0.98 }}
@@ -90,7 +101,7 @@ export default function Sidebar({ page, setPage, role, email }) {
                   )}
                   <item.icon size={18} />
                   {!collapsed && <span>{item.label}</span>}
-                </motion.a>
+                </motion.button>
               ))}
             </div>
           );
@@ -109,7 +120,11 @@ export default function Sidebar({ page, setPage, role, email }) {
             type="button"
             title={dark ? "Use light mode" : "Use dark mode"}
             aria-label={dark ? "Use light mode" : "Use dark mode"}
-            onClick={() => setDark((value) => !value)}
+            onClick={() => setDark((value) => {
+              const next = !value;
+              localStorage.setItem("clinic-theme", next ? "dark" : "light");
+              return next;
+            })}
             whileTap={{ scale: 0.96 }}
           >
             {dark ? <Sun size={18} /> : <Moon size={18} />}

@@ -2,10 +2,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 import { peso } from "../lib/format";
-import { Search } from "lucide-react";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 const CATEGORIES = ["Medicine", "Service"];
 const emptyItem = { name: "", category: "Medicine", price: "", stock: "", expiry_date: "" };
@@ -132,7 +132,7 @@ export default function Inventory({ initialLowStockOnly = false }) {
             ))}
             <button type="button" className={lowStockOnly ? "chip active" : "chip"} onClick={() => setLowStockOnly(true)}>Low stock</button>
           </div>
-          <div className="search"><Search size={16} /><input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <DebouncedSearchInput placeholder="Search..." onSearch={setSearch} />
         </div>
         {shown.length === 0 && <p className="muted">No inventory items match these filters.</p>}
         <div className="table-wrap">

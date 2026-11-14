@@ -1,12 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const allowedOrigin = Deno.env.get("CLINIC_APP_ORIGIN")?.replace(/\/$/, "");
+const allowedOrigins = (Deno.env.get("CLINIC_APP_ORIGIN") || "")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get("Origin") || "";
-  const allowed = allowedOrigin && origin === allowedOrigin
-    ? allowedOrigin
-    : allowedOrigin ? "" : "null";
+  const allowed = allowedOrigins.includes(origin) ? origin : "";
   return {
     ...(allowed ? { "Access-Control-Allow-Origin": allowed } : {}),
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -32,8 +33,8 @@ Deno.serve(async (req) => {
   const headers = corsHeaders(req);
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
   if (req.method !== "POST") return json(req, 405, { error: "Method not allowed" });
-  if (!allowedOrigin) return json(req, 500, { error: "CLINIC_APP_ORIGIN is not configured" });
-  if ((req.headers.get("Origin") || "") !== allowedOrigin) {
+  if (allowedOrigins.length === 0) return json(req, 500, { error: "CLINIC_APP_ORIGIN is not configured" });
+  if (!allowedOrigins.includes(req.headers.get("Origin") || "")) {
     return json(req, 403, { error: "Origin not allowed" });
   }
 
@@ -135,8 +136,16 @@ Deno.serve(async (req) => {
       if (profileError) return json(req, 500, { error: "Profile update failed" });
     } else {
       if (body.id === userData.user.id) return json(req, 400, { error: "You cannot delete your own account" });
-      const { error } = await admin.auth.admin.deleteUser(body.id, true);
-      if (error) return json(req, 400, { error: "Unable to delete account" });
+      const { error } = await admin.auth.admin.deleteUser(body.id, false);
+      if (error) {
+        console.error("Unable to delete staff account:", error.message);
+        if (error.code === "23503" || /foreign key/i.test(error.message)) {
+          return json(req, 409, {
+            error: "This account is linked to sales or audit history. Run supabase/staff-account-delete.sql, then try again.",
+          });
+        }
+        return json(req, 400, { error: "Unable to delete account. Check the staff-admin function logs." });
+      }
     }
 
     return json(req, 200, { ok: true });

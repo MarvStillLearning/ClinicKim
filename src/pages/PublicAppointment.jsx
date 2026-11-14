@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { appointmentDateKey, appointmentDateLabel, appointmentDateTimeTimestamp, CLINIC_NAME } from "../lib/format";
+import AppointmentAvailabilityPicker from "../components/AppointmentAvailabilityPicker";
 import { Stethoscope } from "lucide-react";
-import ThemeToggle from "../components/ThemeToggle";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import Modal from "../components/Modal";
 
@@ -13,65 +13,6 @@ function timeLabel(value) {
     minute: "2-digit",
     timeZone: "Asia/Manila",
   });
-}
-
-function currentManilaTime() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Manila",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const hour = parts.find((part) => part.type === "hour")?.value || "00";
-  const minute = parts.find((part) => part.type === "minute")?.value || "00";
-  const nextMinute = new Date(Date.UTC(2000, 0, 1, Number(hour), Number(minute) + 1));
-  return `${String(nextMinute.getUTCHours()).padStart(2, "0")}:${String(nextMinute.getUTCMinutes()).padStart(2, "0")}`;
-}
-
-function AvailabilityPicker({
-  dates,
-  doctors,
-  selectedDate,
-  selectedDoctor,
-  selectedTime,
-  loading,
-  onDateChange,
-  onDoctorChange,
-  onTimeChange,
-}) {
-  const today = appointmentDateKey(new Date());
-  const minTime = selectedDate === today && currentManilaTime() > "08:00"
-    ? currentManilaTime()
-    : "08:00";
-
-  return (
-    <>
-      <label>Available date
-        <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} required>
-          <option value="">Select an available date...</option>
-          {dates.map((date) => <option key={date} value={date}>{appointmentDateLabel(`${date}T12:00:00+08:00`)}</option>)}
-        </select>
-      </label>
-      <label>Doctor
-        <select value={selectedDoctor} onChange={(event) => onDoctorChange(event.target.value)} disabled={!selectedDate || loading} required>
-          <option value="">{loading ? "Loading available doctors..." : "Select an available doctor..."}</option>
-          {doctors.map((doctor) => <option key={doctor} value={doctor}>{doctor}</option>)}
-        </select>
-      </label>
-      <label>Available time (8:00 AM–5:00 PM)
-        <input
-          type="time"
-          min={minTime}
-          max="17:00"
-          step="60"
-          value={selectedTime}
-          onChange={(event) => onTimeChange(event.target.value)}
-          disabled={!selectedDate || loading}
-          required
-        />
-      </label>
-    </>
-  );
 }
 
 async function invokeBookingFunction(body) {
@@ -120,6 +61,7 @@ export default function PublicAppointment({ onBack }) {
   const [changeForm, setChangeForm] = useState(null);
   const [availableDates, setAvailableDates] = useState([]);
   const [availableDoctors, setAvailableDoctors] = useState([]);
+  const [availableTimes, setAvailableTimes] = useState([]);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
@@ -135,6 +77,7 @@ export default function PublicAppointment({ onBack }) {
     let active = true;
     setAvailableDates([]);
     setAvailableDoctors([]);
+    setAvailableTimes([]);
     setSelectedDate("");
     setSelectedDoctor("");
     setSelectedTime("");
@@ -184,6 +127,31 @@ export default function PublicAppointment({ onBack }) {
     return () => { active = false; };
   }, [selectedDate, availabilityLocation]);
 
+  useEffect(() => {
+    let active = true;
+    setAvailableTimes([]);
+    if (!selectedDate || !selectedDoctor || !availabilityLocation) return () => { active = false; };
+    setAvailabilityLoading(true);
+    supabase.rpc("get_public_appointment_slots", {
+      p_date: selectedDate,
+      p_location: availabilityLocation,
+      p_doctor: selectedDoctor,
+    }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setMessage(error.message);
+      else setAvailableTimes((data || []).map((item) => ({
+        ...item,
+        available_time: String(item.available_time).slice(0, 5),
+      })));
+      setAvailabilityLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setMessage(error instanceof Error ? error.message : "Unable to load available times.");
+      setAvailabilityLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedDate, selectedDoctor, availabilityLocation]);
+
   const selectedAppointmentAt = selectedDate && selectedTime
     ? appointmentDateTimeTimestamp(`${selectedDate}T${selectedTime}`)
     : "";
@@ -197,7 +165,7 @@ export default function PublicAppointment({ onBack }) {
     setSaving(true);
     setMessage("");
 
-    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime > "17:00") {
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "16:00") {
       setMessage("Choose an available appointment date and time.");
       setSaving(false);
       return;
@@ -268,7 +236,7 @@ export default function PublicAppointment({ onBack }) {
 
   function submitChange(e) {
     e.preventDefault();
-    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime > "17:00") {
+    if (!selectedAppointmentAt || !selectedDoctor || selectedTime < "08:00" || selectedTime >= "16:00") {
       setMessage("Choose an available appointment date and time.");
       return;
     }
@@ -319,7 +287,6 @@ export default function PublicAppointment({ onBack }) {
 
   return (
     <div className="public-booking">
-      <ThemeToggle className="public-theme-toggle" />
       <form className="card public-booking-card" onSubmit={submitForm}>
         <div className="public-booking-header">
           <Stethoscope size={36} color="#0d9488" />
@@ -368,9 +335,10 @@ export default function PublicAppointment({ onBack }) {
               ? <p className="muted">Loading available dates...</p>
               : availableDates.length === 0
                 ? <p className="muted">No appointment dates are available at this location. Please contact the clinic.</p>
-                : <AvailabilityPicker
+                : <AppointmentAvailabilityPicker
                     dates={availableDates}
                     doctors={availableDoctors}
+                    times={availableTimes}
                     selectedDate={selectedDate}
                     selectedDoctor={selectedDoctor}
                     selectedTime={selectedTime}
@@ -420,9 +388,10 @@ export default function PublicAppointment({ onBack }) {
                     ? <p className="muted">Loading available dates...</p>
                     : offeredDates.length === 0
                     ? <p className="muted">No available appointment dates at this location. Please choose another location.</p>
-                    : <AvailabilityPicker
+                    : <AppointmentAvailabilityPicker
                         dates={offeredDates}
                         doctors={availableDoctors}
+                        times={availableTimes}
                         selectedDate={selectedDate}
                         selectedDoctor={selectedDoctor}
                         selectedTime={selectedTime}

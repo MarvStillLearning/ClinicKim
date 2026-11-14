@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { dateTime } from "../lib/format";
 import Pagination from "../components/Pagination";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState([]);
@@ -59,7 +60,7 @@ export default function AuditLogs() {
       </div>
       <div className="card">
         <div className="search" style={{ marginBottom: 12 }}>
-          <input placeholder="Search action, table, or record ID..." value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <DebouncedSearchInput placeholder="Search action, table, or record ID..." onSearch={setFilter} />
         </div>
         {message && <p className="error">{message}</p>}
         {loading ? <p className="muted">Loading audit trail...</p> : shown.length === 0 ? <p className="muted">No audit entries found.</p> : (

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, Eye } from "lucide-react";
+import { Plus, Eye } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ageFrom, appointmentDateTime } from "../lib/format";
 import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 const emptyPatient = {
   full_name: "",
@@ -126,10 +127,7 @@ export default function Patients() {
       <div>
         <div className="card">
           <div className="toolbar">
-            <div className="search">
-              <Search size={16} />
-              <input placeholder="Search patient..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
+            <DebouncedSearchInput className="search" placeholder="Search patient..." onSearch={setSearch} />
             <button className="btn primary" type="button" onClick={() => { setForm(emptyPatient); setSelected(null); }}>
               <Plus size={16} /> New patient
             </button>

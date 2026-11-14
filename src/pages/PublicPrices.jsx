@@ -1,9 +1,9 @@
 ﻿import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
 import { peso, CLINIC_NAME } from "../lib/format";
-import { ArrowLeft, Search, Stethoscope } from "lucide-react";
-import ThemeToggle from "../components/ThemeToggle";
+import { ArrowLeft, Stethoscope } from "lucide-react";
 import Pagination from "../components/Pagination";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 function handleAppLink(event, navigate) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -62,7 +62,6 @@ export default function PublicPrices({ onBack }) {
             <div><h1>{CLINIC_NAME}</h1><p className="muted">Medicine & Service Prices</p></div>
           </div>
           <div className="public-header-actions">
-            <ThemeToggle />
             <a className="btn" href="/login" onClick={(event) => handleAppLink(event, onBack)}><ArrowLeft size={16} /> Back to Login</a>
           </div>
         </header>
@@ -73,7 +72,7 @@ export default function PublicPrices({ onBack }) {
               <button key={name} type="button" className={category === name ? "chip active" : "chip"} onClick={() => setCategory(name)}>{name}</button>
             ))}
           </div>
-          <div className="search"><Search size={16} /><input aria-label="Search prices" placeholder="Search medicines or services..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <DebouncedSearchInput className="search" inputProps={{ "aria-label": "Search prices" }} placeholder="Search medicines or services..." onSearch={setSearch} />
         </div>
 
         {loading ? (

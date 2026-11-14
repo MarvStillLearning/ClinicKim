@@ -1,5 +1,7 @@
 ﻿import { useEffect, useRef } from "react";
 
+import { createPortal } from "react-dom";
+
 export default function Modal({ title, open, onClose, children, className = "" }) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -13,16 +15,16 @@ export default function Modal({ title, open, onClose, children, className = "" }
     };
     document.addEventListener("keydown", handleKey);
     document.body.classList.add("modal-open");
-    dialogRef.current?.focus();
+    dialogRef.current?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener("keydown", handleKey);
       document.body.classList.remove("modal-open");
-      previous?.focus();
+      previous?.focus({ preventScroll: true });
     };
   }, [open]);
 
   if (!open) return null;
-  return (
+  return createPortal((
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onCloseRef.current();
     }}>
@@ -34,5 +36,5 @@ export default function Modal({ title, open, onClose, children, className = "" }
         {children}
       </div>
     </div>
-  );
+  ), document.body);
 }

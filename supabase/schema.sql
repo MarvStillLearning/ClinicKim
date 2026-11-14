@@ -52,11 +52,11 @@ create table if not exists doctor_schedule_dates (
   location text not null check (location in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan')),
   available_date date not null,
   available_from time not null default time '08:00',
-  available_until time not null default time '17:00',
+  available_until time not null default time '16:00',
   created_at timestamptz not null default now(),
   unique (doctor, location, available_date),
   constraint doctor_schedule_dates_hours_check
-    check (available_from = time '08:00' and available_until = time '17:00')
+    check (available_from = time '08:00' and available_until = time '16:00')
 );
 
 create table if not exists products (
@@ -75,7 +75,7 @@ create table if not exists sales (
   amount_paid numeric not null,
   change_amount numeric not null,
   payment_method text not null,
-  cashier_id uuid references auth.users,
+  cashier_id uuid references auth.users on delete set null,
   created_at timestamptz default now()
 );
 alter table sales add column if not exists subtotal numeric default 0;
@@ -92,7 +92,7 @@ create table if not exists sale_items (
 
 create table if not exists audit_logs (
   id bigint generated always as identity primary key,
-  actor_id uuid references auth.users,
+  actor_id uuid references auth.users on delete set null,
   action text not null,
   table_name text not null,
   record_id text,
@@ -540,7 +540,8 @@ begin
     where d.doctor = trim(p_doctor)
       and d.location = trim(p_location)
       and d.available_date = v_local_date
-      and v_local_time between d.available_from and d.available_until
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
   ) then
     raise exception 'This appointment date or time is not available';
   end if;
@@ -584,6 +585,83 @@ $$;
 revoke all on function public.book_appointment(text, text, timestamptz, text, text, text) from public;
 grant execute on function public.book_appointment(text, text, timestamptz, text, text, text) to anon, authenticated;
 
+create or replace function public.book_staff_appointment(
+  p_patient_id bigint,
+  p_appt_at timestamptz,
+  p_reason text,
+  p_doctor text,
+  p_location text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_local_date date;
+  v_local_time time;
+  v_appointment_id bigint;
+  v_booking_code text;
+begin
+  if auth.uid() is null or not exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role in ('admin', 'doctor', 'cashier')
+  ) then
+    raise exception 'Staff access required';
+  end if;
+
+  if p_patient_id is null or not exists (
+    select 1 from public.patients where id = p_patient_id
+  ) then
+    raise exception 'Select an existing patient';
+  end if;
+  if length(trim(coalesce(p_reason, ''))) = 0 or length(trim(p_reason)) > 500 then
+    raise exception 'Reason must be between 1 and 500 characters';
+  end if;
+  if length(trim(coalesce(p_doctor, ''))) = 0 or length(trim(p_doctor)) > 100 then
+    raise exception 'Select an available doctor';
+  end if;
+  if trim(coalesce(p_location, '')) not in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan') then
+    raise exception 'Select a valid clinic location';
+  end if;
+  if p_appt_at is null or p_appt_at <= now() then
+    raise exception 'Appointment time must be in the future';
+  end if;
+
+  v_local_date := (p_appt_at at time zone 'Asia/Manila')::date;
+  v_local_time := (p_appt_at at time zone 'Asia/Manila')::time;
+  if not exists (
+    select 1
+    from public.doctor_schedule_dates d
+    where d.doctor = trim(p_doctor)
+      and d.location = trim(p_location)
+      and d.available_date = v_local_date
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
+  ) then
+    raise exception 'This appointment date or time is not available';
+  end if;
+
+  insert into public.appointments (patient_id, appt_at, reason, doctor, location, status)
+  values (p_patient_id, p_appt_at, trim(p_reason), trim(p_doctor), trim(p_location), 'Scheduled')
+  returning id into v_appointment_id;
+
+  update public.appointments
+  set booking_code = 'APT-' || lpad(v_appointment_id::text, 6, '0')
+  where id = v_appointment_id
+  returning booking_code into v_booking_code;
+
+  return jsonb_build_object(
+    'appointment_id', v_appointment_id,
+    'booking_code', v_booking_code
+  );
+end;
+$$;
+revoke all on function public.book_staff_appointment(bigint, timestamptz, text, text, text) from public;
+revoke all on function public.book_staff_appointment(bigint, timestamptz, text, text, text) from anon;
+grant execute on function public.book_staff_appointment(bigint, timestamptz, text, text, text) to authenticated;
+
 drop function if exists public.get_doctors();
 create function public.get_doctors()
 returns table(id uuid, full_name text)
@@ -610,17 +688,47 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_local_date date;
+  v_local_time time;
 begin
   if new.status in ('Cancelled', 'Done') or coalesce(trim(new.doctor), '') = '' then return new; end if;
-  perform pg_advisory_xact_lock(hashtextextended(lower(trim(new.doctor)) || '|' || extract(epoch from new.appt_at)::text, 0));
-  if exists (
-    select 1 from public.appointments existing
+  if new.appt_at <= now() then
+    raise exception 'Appointment time must be in the future';
+  end if;
+
+  v_local_date := (new.appt_at at time zone 'Asia/Manila')::date;
+  v_local_time := (new.appt_at at time zone 'Asia/Manila')::time;
+  if v_local_time < time '08:00' or v_local_time >= time '16:00'
+    or extract(minute from v_local_time) <> 0
+    or extract(second from v_local_time) <> 0 then
+    raise exception 'Appointments must start on the hour between 8:00 AM and 3:00 PM';
+  end if;
+  if not exists (
+    select 1
+    from public.doctor_schedule_dates d
+    where d.doctor = trim(new.doctor)
+      and d.location = trim(new.location)
+      and d.available_date = v_local_date
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
+  ) then
+    raise exception 'This appointment date or time is not available';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(
+    lower(trim(new.doctor)) || '|' || v_local_date::text || '|' || extract(hour from v_local_time)::text, 0
+  ));
+  if (
+    select count(*)
+    from public.appointments existing
     where existing.id is distinct from new.id
       and existing.status not in ('Cancelled', 'Done')
       and lower(trim(existing.doctor)) = lower(trim(new.doctor))
-      and existing.appt_at = new.appt_at
-  ) then
-    raise exception 'Doctor is already booked for this time slot';
+      and (existing.appt_at at time zone 'Asia/Manila')::date = v_local_date
+      and extract(hour from (existing.appt_at at time zone 'Asia/Manila')) = extract(hour from v_local_time)
+  ) >= 10 then
+    raise exception 'This hour is full. Please choose another hour.';
   end if;
   return new;
 end;

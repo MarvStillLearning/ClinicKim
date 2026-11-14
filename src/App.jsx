@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import Sidebar from "./components/Sidebar.jsx";
-import AppTopbar from "./components/AppTopbar.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import POS from "./pages/POS.jsx";
@@ -17,7 +16,17 @@ import PublicAppointment from "./pages/PublicAppointment.jsx";
 import PublicPrices from "./pages/PublicPrices.jsx";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
-const PAGE_IDS = new Set(["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit"]);
+const PAGE_IDS = new Set([
+  "dashboard",
+  "pos",
+  "patients",
+  "consultations",
+  "appointments",
+  "inventory",
+  "sales",
+  "staff",
+  "audit",
+]);
 
 function pageFromPathname(pathname) {
   const page = pathname.replace(/^\/+|\/+$/g, "");
@@ -51,12 +60,30 @@ export default function App() {
   const [publicPage, setPublicPage] = useState(() => publicPageFromPathname(window.location.pathname));
   const reducedMotion = useReducedMotion();
 
+  // Keep this list in sync with the navigation menu in Sidebar.jsx.
   const accessByRole = {
-    admin: ["dashboard", "pos", "patients", "consultations", "appointments", "inventory", "sales", "staff", "audit"],
-    doctor: ["dashboard", "patients", "consultations", "appointments", "inventory"],
+    admin: [
+      "dashboard",
+      "pos",
+      "patients",
+      "consultations",
+      "appointments",
+      "inventory",
+      "sales",
+      "staff",
+      "audit",
+    ],
+    doctor: [
+      "dashboard",
+      "patients",
+      "consultations",
+      "appointments",
+      "inventory",
+    ],
     cashier: ["dashboard", "pos", "sales"],
   };
 
+  // Clear page-specific filters when opening a page from the menu.
   function preparePage(nextPage) {
     if (nextPage === "appointments") setAppointmentsFilter("Upcoming");
     if (nextPage === "sales") setSalesFilter("Today");
@@ -146,7 +173,14 @@ export default function App() {
   if (!user && publicPage === "prices") {
     return <PublicPrices onBack={() => navigateToPublicPage(null)} />;
   }
-  if (!user) return <Login onBookAppointment={() => navigateToPublicPage("appointment")} onViewPrices={() => navigateToPublicPage("prices")} />;
+  if (!user) {
+    return (
+      <Login
+        onBookAppointment={() => navigateToPublicPage("appointment")}
+        onViewPrices={() => navigateToPublicPage("prices")}
+      />
+    );
+  }
 
   return (
     <div className="layout">
@@ -157,13 +191,6 @@ export default function App() {
         email={user.email}
       />
       <div className="app-content-shell">
-        <AppTopbar
-          page={activePage}
-          role={role}
-          email={user.email}
-          pages={accessByRole[role] || []}
-          onNavigate={navigateToPage}
-        />
         <AnimatePresence mode="wait">
           <motion.main
             key={activePage}
@@ -173,40 +200,58 @@ export default function App() {
             exit={reducedMotion ? undefined : { opacity: 0, y: -4 }}
             transition={{ duration: reducedMotion ? 0 : 0.22, ease: "easeOut" }}
           >
-          {activePage === "dashboard" && (
-            <Dashboard
-              onOpenPatients={accessByRole[role]?.includes("patients") ? () => navigateToPage("patients") : undefined}
-              onOpenSales={(filter) => {
-                navigateToPage("sales");
-                setSalesFilter(filter);
-              }}
-              onOpenAppointmentsToday={() => {
-                navigateToPage("appointments");
-                setAppointmentsFilter("Today");
-              }}
-              onOpenConsultationsToday={() => {
-                setConsultationPatientId("");
-                navigateToPage("consultations");
-              }}
-              onOpenLowStock={() => {
-                if (role === "cashier") {
-                  navigateToPage("pos");
-                  setPosLowStockOnly(true);
-                } else {
-                  navigateToPage("inventory");
-                  setInventoryLowStockOnly(true);
+            {activePage === "dashboard" && (
+              <Dashboard
+                onOpenPatients={
+                  accessByRole[role]?.includes("patients")
+                    ? () => navigateToPage("patients")
+                    : undefined
                 }
-              }}
-            />
-          )}
-          {activePage === "pos" && <POS user={user} initialLowStockOnly={posLowStockOnly} />}
-          {activePage === "patients" && <Patients />}
-          {activePage === "consultations" && <Clinical user={user} initialPatientId={consultationPatientId} />}
-          {activePage === "appointments" && <Appointments initialFilter={appointmentsFilter} isAdmin={role === "admin"} />}
-          {activePage === "inventory" && <Inventory initialLowStockOnly={inventoryLowStockOnly} />}
-          {activePage === "sales" && <Sales initialFilter={salesFilter} />}
-          {activePage === "staff" && <Staff />}
-          {activePage === "audit" && <AuditLogs />}
+                onOpenSales={(filter) => {
+                  navigateToPage("sales");
+                  setSalesFilter(filter);
+                }}
+                onOpenAppointmentsToday={() => {
+                  navigateToPage("appointments");
+                  setAppointmentsFilter("Today");
+                }}
+                onOpenConsultationsToday={() => {
+                  setConsultationPatientId("");
+                  navigateToPage("consultations");
+                }}
+                onOpenLowStock={() => {
+                  if (role === "cashier") {
+                    navigateToPage("pos");
+                    setPosLowStockOnly(true);
+                  } else {
+                    navigateToPage("inventory");
+                    setInventoryLowStockOnly(true);
+                  }
+                }}
+              />
+            )}
+            {activePage === "pos" && (
+              <POS user={user} initialLowStockOnly={posLowStockOnly} />
+            )}
+            {activePage === "patients" && <Patients />}
+            {activePage === "consultations" && (
+              <Clinical
+                user={user}
+                initialPatientId={consultationPatientId}
+              />
+            )}
+            {activePage === "appointments" && (
+              <Appointments
+                initialFilter={appointmentsFilter}
+                isAdmin={role === "admin"}
+              />
+            )}
+            {activePage === "inventory" && (
+              <Inventory initialLowStockOnly={inventoryLowStockOnly} />
+            )}
+            {activePage === "sales" && <Sales initialFilter={salesFilter} />}
+            {activePage === "staff" && <Staff />}
+            {activePage === "audit" && <AuditLogs />}
           </motion.main>
         </AnimatePresence>
       </div>

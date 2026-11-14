@@ -6,6 +6,8 @@ import Modal from "../components/Modal";
 import Pagination from "../components/Pagination";
 import ActionLoadingDialog from "../components/ActionLoadingDialog";
 import DoctorScheduleManager from "../components/DoctorScheduleManager";
+import AppointmentAvailabilityPicker from "../components/AppointmentAvailabilityPicker";
+import DebouncedSearchInput from "../components/DebouncedSearchInput";
 
 const emptyAppointment = { patient_id: "", appt_at: "", reason: "", doctor: "Monique Nolasco - Pet", location: "" };
 
@@ -22,6 +24,15 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   const [showPatientPicker, setShowPatientPicker] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
+  const [availableDates, setAvailableDates] = useState([]);
+  const [availableDoctors, setAvailableDoctors] = useState([]);
+  const [availableTimes, setAvailableTimes] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
+  const [datesLoading, setDatesLoading] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
   const pageSize = 10;
 
   async function load() {
@@ -32,6 +43,91 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   }
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    let active = true;
+    setAvailableDates([]);
+    setAvailableDoctors([]);
+    setAvailableTimes([]);
+    setSelectedDate("");
+    setSelectedDoctor("");
+    setSelectedTime("");
+    setAvailabilityError("");
+
+    if (!showForm || form.id || !form.location) {
+      setDatesLoading(false);
+      return () => { active = false; };
+    }
+
+    setDatesLoading(true);
+    supabase.rpc("get_public_appointment_dates", { p_location: form.location })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) setAvailabilityError(error.message);
+        else setAvailableDates((data || []).map((item) => item.available_date));
+        setDatesLoading(false);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAvailabilityError(error instanceof Error ? error.message : "Unable to load available dates.");
+        setDatesLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [form.location, form.id, showForm]);
+
+  useEffect(() => {
+    let active = true;
+    setAvailableDoctors([]);
+    setSelectedDoctor("");
+
+    if (!showForm || form.id || !selectedDate || !form.location) {
+      setAvailabilityLoading(false);
+      return () => { active = false; };
+    }
+
+    setAvailabilityLoading(true);
+    supabase.rpc("get_public_appointment_doctors", {
+      p_date: selectedDate,
+      p_location: form.location,
+    }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setAvailabilityError(error.message);
+      else setAvailableDoctors((data || []).map((item) => item.doctor));
+      setAvailabilityLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setAvailabilityError(error instanceof Error ? error.message : "Unable to load available doctors.");
+      setAvailabilityLoading(false);
+    });
+
+    return () => { active = false; };
+  }, [selectedDate, form.location, form.id, showForm]);
+
+  useEffect(() => {
+    let active = true;
+    setAvailableTimes([]);
+    if (!showForm || form.id || !selectedDate || !selectedDoctor || !form.location) return () => { active = false; };
+    setAvailabilityLoading(true);
+    supabase.rpc("get_public_appointment_slots", {
+      p_date: selectedDate,
+      p_location: form.location,
+      p_doctor: selectedDoctor,
+    }).then(({ data, error }) => {
+      if (!active) return;
+      if (error) setAvailabilityError(error.message);
+      else setAvailableTimes((data || []).map((item) => ({
+        ...item,
+        available_time: String(item.available_time).slice(0, 5),
+      })));
+      setAvailabilityLoading(false);
+    }).catch((error) => {
+      if (!active) return;
+      setAvailabilityError(error instanceof Error ? error.message : "Unable to load available times.");
+      setAvailabilityLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedDate, selectedDoctor, form.location, form.id, showForm]);
+
   async function save(e) {
     e.preventDefault();
     if (!form.patient_id) {
@@ -39,21 +135,39 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
       setShowPatientPicker(true);
       return;
     }
+    if (!form.id && (!selectedDate || !selectedDoctor || !selectedTime)) {
+      setAvailabilityError("Choose an available date, doctor, and time.");
+      return;
+    }
     setSaving(true);
     setActionType("save");
-    const data = { ...form, appt_at: appointmentDateTimeTimestamp(form.appt_at) };
-    delete data.id;
-    const { error } = form.id
-      ? await supabase.from("appointments").update(data).eq("id", form.id)
-      : await supabase.from("appointments").insert(data);
-    if (error) {
+    try {
+      let error;
+      if (form.id) {
+        const data = { ...form, appt_at: appointmentDateTimeTimestamp(form.appt_at) };
+        delete data.id;
+        ({ error } = await supabase.from("appointments").update(data).eq("id", form.id));
+      } else {
+        ({ error } = await supabase.rpc("book_staff_appointment", {
+          p_patient_id: Number(form.patient_id),
+          p_appt_at: appointmentDateTimeTimestamp(`${selectedDate}T${selectedTime}`),
+          p_reason: form.reason.trim(),
+          p_doctor: selectedDoctor,
+          p_location: form.location,
+        }));
+      }
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      setForm(emptyAppointment);
+      setShowForm(false);
+      await load();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to save the appointment.");
+    } finally {
       setSaving(false);
-      return alert(error.message);
     }
-    setForm(emptyAppointment);
-    setShowForm(false);
-    load();
-    setSaving(false);
   }
   async function setStatus(id, status) {
     setSaving(true);
@@ -76,6 +190,10 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   }
   function openAdd() {
     setForm(emptyAppointment);
+    setSelectedDate("");
+    setSelectedDoctor("");
+    setSelectedTime("");
+    setAvailabilityError("");
     setShowPatientPicker(false);
     setShowForm(true);
   }
@@ -89,6 +207,7 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
   }
   function openEdit(a) {
     setForm({ id: a.id, patient_id: a.patient_id || "", appt_at: appointmentDateTimeLocal(a.appt_at), reason: a.reason || "", doctor: a.doctor || "Monique Nolasco - Pet", location: a.location || "" });
+    setAvailabilityError("");
     setShowForm(true);
   }
 
@@ -135,20 +254,56 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
                 : "Select patient"}
             </button>
           </label>
-          <label>Date & time<input type="datetime-local" value={form.appt_at} onChange={(e) => setForm({ ...form, appt_at: e.target.value })} required /></label>
-          <label>Reason<input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
-          <label>Doctor
-            <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
-              <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
-            </select>
-          </label>
-          <label>Location
-            <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required>
-              <option value="">Select location...</option>
-              <option value="Sta. Ana, Cagayan">Sta. Ana, Cagayan</option>
-              <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
-            </select>
-          </label>
+          <label>Reason<input maxLength={500} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required /></label>
+          {form.id ? (
+            <>
+              <label>Date & time<input type="datetime-local" value={form.appt_at} onChange={(e) => setForm({ ...form, appt_at: e.target.value })} required /></label>
+              <label>Doctor
+                <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} required>
+                  <option value="Monique Nolasco - Pet">Monique Nolasco - Pet</option>
+                </select>
+              </label>
+              <label>Location
+                <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required>
+                  <option value="">Select location...</option>
+                  <option value="Sta. Ana, Cagayan">Sta. Ana, Cagayan</option>
+                  <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
+                </select>
+              </label>
+            </>
+          ) : (
+            <>
+              <label>Location
+                <select value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} required>
+                  <option value="">Select location...</option>
+                  <option value="Sta. Ana, Cagayan">Sta. Ana, Cagayan</option>
+                  <option value="Gattaran, Cagayan">Gattaran, Cagayan</option>
+                </select>
+              </label>
+              {form.location && (datesLoading
+                ? <p className="muted">Loading available dates...</p>
+                : availableDates.length === 0
+                  ? <p className="muted">No appointment dates are available at this location.</p>
+                  : <AppointmentAvailabilityPicker
+                      dates={availableDates}
+                      doctors={availableDoctors}
+                      times={availableTimes}
+                      selectedDate={selectedDate}
+                      selectedDoctor={selectedDoctor}
+                      selectedTime={selectedTime}
+                      loading={availabilityLoading}
+                      onDateChange={(date) => {
+                        setSelectedDate(date);
+                        setSelectedDoctor("");
+                        setSelectedTime("");
+                      }}
+                      onDoctorChange={setSelectedDoctor}
+                      onTimeChange={setSelectedTime}
+                    />
+              )}
+              {availabilityError && <p className="error" role="alert">{availabilityError}</p>}
+            </>
+          )}
           <div className="modal-actions">
             <button type="button" className="btn" onClick={() => setShowForm(false)}>Cancel</button>
             <button className="btn primary" disabled={saving}>{saving ? "Saving..." : form.id ? "Update appointment" : "Add appointment"}</button>
@@ -158,12 +313,11 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
 
       <Modal title="Select existing patient" open={showPatientPicker} onClose={() => setShowPatientPicker(false)} className="staff-modal">
         <div className="patient-picker">
-          <input
-            className="patient-picker-search"
-            type="search"
+          <DebouncedSearchInput
+            className="search patient-picker-search-wrap"
             placeholder="Search name, phone, or address..."
-            value={patientSearch}
-            onChange={(event) => setPatientSearch(event.target.value)}
+            onSearch={setPatientSearch}
+            resetKey={showPatientPicker}
           />
           <div className="patient-picker-list">
             {patients
@@ -190,7 +344,7 @@ export default function Appointments({ initialFilter = "Upcoming", isAdmin = fal
 
       <div className="card">
         <div className="search" style={{ marginBottom: 12 }}>
-          <input placeholder="Search patient, doctor, location, reason, or Booking ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <DebouncedSearchInput placeholder="Search patient, doctor, location, reason, or Booking ID..." onSearch={setSearch} />
         </div>
         <div className="chips">
           {["Upcoming", "Today", "All"].map((f) => (

@@ -1,5 +1,5 @@
 -- Run after supabase/public-booking.sql in Supabase SQL Editor.
--- Adds exact available dates with open appointment times from 8:00 AM to 5:00 PM.
+-- Adds exact available dates and hourly appointment capacity from 8:00 AM to 4:00 PM.
 
 create table if not exists public.doctor_schedule_dates (
   id bigint generated always as identity primary key,
@@ -7,28 +7,31 @@ create table if not exists public.doctor_schedule_dates (
   location text not null check (location in ('Sta. Ana, Cagayan', 'Gattaran, Cagayan')),
   available_date date not null,
   available_from time not null default time '08:00',
-  available_until time not null default time '17:00',
+  available_until time not null default time '16:00',
   created_at timestamptz not null default now(),
   unique (doctor, location, available_date),
   constraint doctor_schedule_dates_hours_check
-    check (available_from = time '08:00' and available_until = time '17:00')
+    check (available_from = time '08:00' and available_until = time '16:00')
 );
 
 alter table public.doctor_schedule_dates
   add column if not exists available_from time not null default time '08:00';
 alter table public.doctor_schedule_dates
-  add column if not exists available_until time not null default time '17:00';
+  add column if not exists available_until time not null default time '16:00';
+
+alter table public.doctor_schedule_dates
+  drop constraint if exists doctor_schedule_dates_hours_check;
 
 update public.doctor_schedule_dates
 set available_from = time '08:00'
 where available_from is distinct from time '08:00';
 update public.doctor_schedule_dates
-set available_until = time '17:00'
-where available_until is distinct from time '17:00';
+set available_until = time '16:00'
+where available_until is distinct from time '16:00';
 alter table public.doctor_schedule_dates
   alter column available_from set default time '08:00',
   alter column available_from set not null,
-  alter column available_until set default time '17:00',
+  alter column available_until set default time '16:00',
   alter column available_until set not null;
 
 create unique index if not exists doctor_schedule_dates_doctor_location_date_unique
@@ -40,7 +43,7 @@ alter table public.doctor_schedule_dates
   add constraint doctor_schedule_dates_hours_check
   check (
     available_from = time '08:00'
-    and available_until = time '17:00'
+    and available_until = time '16:00'
   );
 
 alter table public.doctor_schedule_dates enable row level security;
@@ -93,6 +96,7 @@ end;
 $$;
 
 drop function if exists public.get_public_appointment_slots(date, text, text, text);
+drop function if exists public.get_public_appointment_slots(date, text, text);
 drop function if exists public.get_public_appointment_doctors(date, text);
 create function public.get_public_appointment_doctors(p_date date, p_location text)
 returns table(doctor text)
@@ -107,6 +111,38 @@ as $$
     and d.available_date = p_date
     and (d.available_date + d.available_until) at time zone 'Asia/Manila' > now()
   order by d.doctor;
+$$;
+
+create function public.get_public_appointment_slots(p_date date, p_location text, p_doctor text)
+returns table(available_time time, remaining_slots integer)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select slots.available_time,
+    greatest(0, 10 - (
+      select count(*)::integer
+      from public.appointments a
+      where lower(trim(a.doctor)) = lower(trim(p_doctor))
+        and (a.appt_at at time zone 'Asia/Manila')::date = p_date
+        and extract(hour from (a.appt_at at time zone 'Asia/Manila')) = extract(hour from slots.available_time)
+        and a.status not in ('Cancelled', 'Done')
+    )) as remaining_slots
+  from generate_series(8, 15) as slot(hour_number)
+  cross join lateral (
+    select make_time(slot.hour_number, 0, 0) as available_time
+  ) slots
+  where exists (
+    select 1
+    from public.doctor_schedule_dates d
+    where d.doctor = p_doctor
+      and d.location = p_location
+      and d.available_date = p_date
+      and slots.available_time >= d.available_from
+      and slots.available_time < d.available_until
+  )
+  order by slots.available_time;
 $$;
 
 drop function if exists public.get_public_appointment_dates(text);
@@ -127,8 +163,10 @@ $$;
 
 revoke all on function public.get_public_appointment_dates(text) from public;
 revoke all on function public.get_public_appointment_doctors(date, text) from public;
+revoke all on function public.get_public_appointment_slots(date, text, text) from public;
 grant execute on function public.get_public_appointment_dates(text) to anon, authenticated;
 grant execute on function public.get_public_appointment_doctors(date, text) to anon, authenticated;
+grant execute on function public.get_public_appointment_slots(date, text, text) to anon, authenticated;
 
 drop function if exists public.book_appointment(text, text, date, text, text, text);
 create or replace function public.book_appointment(
@@ -162,7 +200,8 @@ begin
     where d.doctor = trim(p_doctor)
       and d.location = trim(p_location)
       and d.available_date = v_local_date
-      and v_local_time between d.available_from and d.available_until
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
   ) then
     raise exception 'This appointment date or time is not available';
   end if;
@@ -270,13 +309,8 @@ begin
     where d.doctor = trim(p_doctor)
       and d.location = trim(p_location)
       and d.available_date = v_local_date
-      and v_local_time between d.available_from and d.available_until
-  ) or exists (
-    select 1 from public.appointments a
-    where a.id <> v_appointment_id
-      and lower(trim(a.doctor)) = lower(trim(p_doctor))
-      and a.appt_at = p_appt_at
-      and a.status not in ('Cancelled', 'Done')
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
   ) then
     raise exception 'This appointment date or time is no longer available';
   end if;
@@ -299,17 +333,47 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_local_date date;
+  v_local_time time;
 begin
   if new.status in ('Cancelled', 'Done') or coalesce(trim(new.doctor), '') = '' then return new; end if;
-  perform pg_advisory_xact_lock(hashtextextended(lower(trim(new.doctor)) || '|' || extract(epoch from new.appt_at)::text, 0));
-  if exists (
-    select 1 from public.appointments a
+  if new.appt_at <= now() then
+    raise exception 'Appointment time must be in the future';
+  end if;
+
+  v_local_date := (new.appt_at at time zone 'Asia/Manila')::date;
+  v_local_time := (new.appt_at at time zone 'Asia/Manila')::time;
+  if v_local_time < time '08:00' or v_local_time >= time '16:00'
+    or extract(minute from v_local_time) <> 0
+    or extract(second from v_local_time) <> 0 then
+    raise exception 'Appointments must start on the hour between 8:00 AM and 3:00 PM';
+  end if;
+  if not exists (
+    select 1
+    from public.doctor_schedule_dates d
+    where d.doctor = trim(new.doctor)
+      and d.location = trim(new.location)
+      and d.available_date = v_local_date
+      and v_local_time >= d.available_from
+      and v_local_time < d.available_until
+  ) then
+    raise exception 'This appointment date or time is not available';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(
+    lower(trim(new.doctor)) || '|' || v_local_date::text || '|' || extract(hour from v_local_time)::text, 0
+  ));
+  if (
+    select count(*)
+    from public.appointments a
     where a.id is distinct from new.id
       and a.status not in ('Cancelled', 'Done')
       and lower(trim(a.doctor)) = lower(trim(new.doctor))
-      and a.appt_at = new.appt_at
-  ) then
-    raise exception 'Doctor is already booked for this time slot';
+      and (a.appt_at at time zone 'Asia/Manila')::date = v_local_date
+      and extract(hour from (a.appt_at at time zone 'Asia/Manila')) = extract(hour from v_local_time)
+  ) >= 10 then
+    raise exception 'This hour is full. Please choose another hour.';
   end if;
   return new;
 end;
